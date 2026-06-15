@@ -13,3 +13,4 @@ build
 .idea
 
 backend/venv
+backend/uploads
