@@ -11,3 +11,5 @@ build
 # IDE
 .vscode
 .idea
+
+backend/venv
