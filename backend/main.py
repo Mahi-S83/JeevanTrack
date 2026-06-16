@@ -139,3 +139,33 @@ def get_timeline():
         })
 
     return {"timeline": timeline}
+
+
+@app.get("/trends/{metric}")
+def get_trends(metric: str):
+    response = supabase.table("reports").select(
+        "id, extracted_data, uploaded_at"
+    ).order("uploaded_at", desc=False).execute()
+
+    trend_points = []
+    for report in response.data:
+        extracted = report.get("extracted_data") or {}
+        lab_values = extracted.get("lab_values") or {}
+
+        # Case-insensitive search for the metric
+        for test_name, test_data in lab_values.items():
+            if metric.lower() in test_name.lower():
+                trend_points.append({
+                    "report_id": report["id"],
+                    "date": extracted.get("report_date"),
+                    "test_name": test_name,
+                    "value": test_data.get("value"),
+                    "unit": test_data.get("unit"),
+                    "normal_range": test_data.get("normal_range"),
+                    "uploaded_at": report["uploaded_at"]
+                })
+
+    return {
+        "metric": metric,
+        "data_points": trend_points
+    }
