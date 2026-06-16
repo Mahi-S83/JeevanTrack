@@ -27,7 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 EXTRACTION_PROMPT = """
 You are a medical report parser. Analyze this medical report and extract the following information in valid JSON format ONLY (no markdown, no explanation):
 
@@ -86,7 +85,6 @@ async def upload_report(file: UploadFile = File(...)):
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Determine mime type
     if file.filename.lower().endswith(".pdf"):
         mime_type = "application/pdf"
     elif file.filename.lower().endswith((".png",)):
@@ -94,7 +92,6 @@ async def upload_report(file: UploadFile = File(...)):
     else:
         mime_type = "image/jpeg"
 
-    # Read file bytes for Gemini
     with open(file_path, "rb") as f:
         file_bytes = f.read()
 
@@ -105,7 +102,6 @@ async def upload_report(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini extraction failed: {str(e)}")
 
-    # Save to Supabase
     try:
         result = supabase.table("reports").insert({
             "file_name": file.filename,
@@ -120,3 +116,26 @@ async def upload_report(file: UploadFile = File(...)):
         "file_name": file.filename,
         "extracted": extracted_data
     }
+
+
+@app.get("/timeline")
+def get_timeline():
+    response = supabase.table("reports").select(
+        "id, file_name, uploaded_at, extracted_data"
+    ).order("uploaded_at", desc=False).execute()
+
+    timeline = []
+    for report in response.data:
+        extracted = report.get("extracted_data") or {}
+        timeline.append({
+            "id": report["id"],
+            "file_name": report["file_name"],
+            "date": extracted.get("report_date"),
+            "hospital": extracted.get("hospital_name"),
+            "doctor": extracted.get("doctor_name"),
+            "diagnosis": extracted.get("diagnosis"),
+            "report_type": extracted.get("report_type"),
+            "uploaded_at": report["uploaded_at"]
+        })
+
+    return {"timeline": timeline}
