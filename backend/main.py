@@ -222,3 +222,83 @@ Answer:"""
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+    
+
+@app.get("/doctor-brief")
+def get_doctor_brief():
+    # Fetch all reports
+    response = supabase.table("reports").select(
+        "file_name, extracted_data, uploaded_at"
+    ).order("uploaded_at", desc=False).execute()
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="No reports found")
+
+    # Build context from all reports
+    reports_context = ""
+    all_diagnoses = []
+    all_medicines = []
+    abnormal_values = []
+
+    for report in response.data:
+        extracted = report.get("extracted_data") or {}
+
+        if extracted.get("diagnosis"):
+            all_diagnoses.append(f"{extracted.get('report_date', 'Unknown date')}: {extracted.get('diagnosis')}")
+
+        medicines = extracted.get("medicines") or []
+        all_medicines.extend(medicines)
+
+        # Find abnormal lab values
+        lab_values = extracted.get("lab_values") or {}
+        for test_name, test_data in lab_values.items():
+            value = test_data.get("value")
+            normal_range = test_data.get("normal_range")
+            unit = test_data.get("unit", "")
+            if value and normal_range:
+                abnormal_values.append(
+                    f"{test_name}: {value} {unit} (Normal: {normal_range}) - from {extracted.get('report_date', 'unknown date')}"
+                )
+
+        reports_context += f"""
+Report: {report['file_name']} | Date: {extracted.get('report_date')} | Hospital: {extracted.get('hospital_name')}
+"""
+
+    brief_prompt = f"""
+You are a medical summarization assistant. Based on the patient's medical reports below, generate a concise doctor brief in this exact format:
+
+PATIENT HEALTH BRIEF
+====================
+
+VISIT HISTORY:
+{reports_context}
+
+DIAGNOSES HISTORY:
+{chr(10).join(all_diagnoses) if all_diagnoses else 'None recorded'}
+
+CURRENT MEDICATIONS:
+{chr(10).join(set(all_medicines)) if all_medicines else 'None recorded'}
+
+KEY ABNORMAL LAB VALUES:
+{chr(10).join(abnormal_values[:15]) if abnormal_values else 'None found'}
+
+Based on all the above data, write:
+1. A 2-3 sentence CLINICAL SUMMARY of the patient's health status
+2. TOP 3 CONCERNS a doctor should be aware of
+3. RECOMMENDED FOLLOW-UPS based on the data
+
+Keep it concise, clinical, and factual. Do not invent any information.
+"""
+
+    try:
+        ai_response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=brief_prompt
+        )
+        return {
+            "brief": ai_response.text,
+            "reports_count": len(response.data),
+            "generated_at": "now"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Brief generation failed: {str(e)}")    
