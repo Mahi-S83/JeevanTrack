@@ -169,3 +169,56 @@ def get_trends(metric: str):
         "metric": metric,
         "data_points": trend_points
     }
+
+
+@app.post("/chat")
+async def chat(request: dict):
+    user_message = request.get("message", "")
+    
+    if not user_message:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    # Fetch all reports from Supabase
+    response = supabase.table("reports").select(
+        "file_name, extracted_data, uploaded_at"
+    ).order("uploaded_at", desc=False).execute()
+
+    # Build context from all reports
+    reports_context = ""
+    for report in response.data:
+        extracted = report.get("extracted_data") or {}
+        reports_context += f"""
+Report: {report['file_name']} (uploaded: {report['uploaded_at']})
+Date: {extracted.get('report_date')}
+Hospital: {extracted.get('hospital_name')}
+Doctor: {extracted.get('doctor_name')}
+Diagnosis: {extracted.get('diagnosis')}
+Medicines: {extracted.get('medicines')}
+Lab Values: {json.dumps(extracted.get('lab_values', {}))}
+---
+"""
+
+    chat_prompt = f"""
+You are a personal health assistant. You have access to the user's medical reports below.
+Answer the user's question based ONLY on their actual report data.
+Be concise, clear, and helpful. If the data doesn't contain the answer, say so honestly.
+Do not make up values or diagnoses.
+
+USER'S MEDICAL REPORTS:
+{reports_context}
+
+USER QUESTION: {user_message}
+
+Answer:"""
+
+    try:
+        ai_response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=chat_prompt
+        )
+        return {
+            "question": user_message,
+            "answer": ai_response.text
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
