@@ -6,6 +6,8 @@ from google.genai import types
 import os
 import shutil
 import json
+import secrets
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -301,4 +303,78 @@ Keep it concise, clinical, and factual. Do not invent any information.
             "generated_at": "now"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Brief generation failed: {str(e)}")    
+        raise HTTPException(status_code=500, detail=f"Brief generation failed: {str(e)}")
+
+
+@app.post("/share")
+def create_share_link(expiry_hours: int = 24):
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(hours=expiry_hours)
+
+    try:
+        result = supabase.table("shares").insert({
+            "token": token,
+            "expires_at": expires_at.isoformat(),
+            "revoked": False
+        }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create share link: {str(e)}")
+
+    return {
+        "token": token,
+        "share_url": f"http://localhost:8000/shared/{token}",
+        "expires_at": expires_at.isoformat(),
+        "expires_in_hours": expiry_hours
+    }
+
+
+@app.get("/shared/{token}")
+def view_shared_report(token: str):
+    try:
+        result = supabase.table("shares").select("*").eq("token", token).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Share link not found")
+
+    share = result.data[0]
+
+    if share["revoked"]:
+        raise HTTPException(status_code=403, detail="This share link has been revoked")
+
+    expires_at = datetime.fromisoformat(share["expires_at"])
+    if datetime.utcnow() > expires_at:
+        raise HTTPException(status_code=403, detail="This share link has expired")
+
+    reports = supabase.table("reports").select(
+        "file_name, extracted_data, uploaded_at"
+    ).order("uploaded_at", desc=False).execute()
+
+    timeline = []
+    for report in reports.data:
+        extracted = report.get("extracted_data") or {}
+        timeline.append({
+            "file_name": report["file_name"],
+            "date": extracted.get("report_date"),
+            "hospital": extracted.get("hospital_name"),
+            "doctor": extracted.get("doctor_name"),
+            "diagnosis": extracted.get("diagnosis"),
+            "report_type": extracted.get("report_type"),
+        })
+
+    return {
+        "message": "Shared health records - read only",
+        "expires_at": share["expires_at"],
+        "timeline": timeline
+    }
+
+
+@app.delete("/share/{token}")
+def revoke_share_link(token: str):
+    try:
+        supabase.table("shares").update({"revoked": True}).eq("token", token).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"message": "Share link revoked successfully"}        
