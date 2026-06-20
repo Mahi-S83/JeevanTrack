@@ -23,7 +23,12 @@ app = FastAPI(title="JeevanTrack API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],   
+    allow_origins=[
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://jeevantrack-backend.onrender.com",
+    "*"  # temporary during development
+],   
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
