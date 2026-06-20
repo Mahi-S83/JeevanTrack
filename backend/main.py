@@ -363,10 +363,45 @@ def view_shared_report(token: str):
             "report_type": extracted.get("report_type"),
         })
 
+    # Generate doctor brief
+    reports_context = ""
+    for report in reports.data:
+        extracted = report.get("extracted_data") or {}
+        reports_context += f"""
+Report: {report['file_name']} | Date: {extracted.get('report_date')} | Hospital: {extracted.get('hospital_name')}
+Lab Values: {json.dumps(extracted.get('lab_values', {}))}
+Diagnosis: {extracted.get('diagnosis')}
+Medicines: {extracted.get('medicines')}
+---
+"""
+
+    brief_prompt = f"""
+You are a medical summarization assistant. Generate a concise doctor brief based on this patient's reports.
+Write:
+1. A 2-3 sentence CLINICAL SUMMARY
+2. TOP 3 CONCERNS a doctor should know
+3. RECOMMENDED FOLLOW-UPS
+
+Keep it concise, clinical, and factual. Do not invent any information.
+
+PATIENT REPORTS:
+{reports_context}
+"""
+
+    try:
+        ai_response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=brief_prompt
+        )
+        doctor_brief = ai_response.text
+    except Exception:
+        doctor_brief = "Could not generate brief at this time."
+
     return {
         "message": "Shared health records - read only",
         "expires_at": share["expires_at"],
-        "timeline": timeline
+        "timeline": timeline,
+        "doctor_brief": doctor_brief
     }
 
 
