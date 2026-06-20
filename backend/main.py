@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from google import genai
@@ -67,6 +67,17 @@ def extract_with_gemini(file_bytes: bytes, mime_type: str) -> dict:
     return json.loads(text.strip())
 
 
+def get_user_id_from_token(authorization: str = None) -> str | None:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.replace("Bearer ", "")
+    try:
+        user = supabase.auth.get_user(token)
+        return user.user.id
+    except Exception:
+        return None
+
+
 @app.get("/")
 def root():
     return {"message": "JeevanTrack API is running"}
@@ -79,7 +90,12 @@ def test_db():
 
 
 @app.post("/upload")
-async def upload_report(file: UploadFile = File(...)):
+async def upload_report(
+    file: UploadFile = File(...),
+    authorization: str = Header(None)
+):
+    user_id = get_user_id_from_token(authorization)
+
     upload_dir = "uploads"
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -107,7 +123,8 @@ async def upload_report(file: UploadFile = File(...)):
     try:
         result = supabase.table("reports").insert({
             "file_name": file.filename,
-            "extracted_data": extracted_data
+            "extracted_data": extracted_data,
+            "user_id": user_id
         }).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database insert failed: {str(e)}")
@@ -121,10 +138,17 @@ async def upload_report(file: UploadFile = File(...)):
 
 
 @app.get("/timeline")
-def get_timeline():
-    response = supabase.table("reports").select(
+def get_timeline(authorization: str = Header(None)):
+    user_id = get_user_id_from_token(authorization)
+
+    query = supabase.table("reports").select(
         "id, file_name, uploaded_at, extracted_data"
-    ).order("uploaded_at", desc=False).execute()
+    ).order("uploaded_at", desc=False)
+
+    if user_id:
+        query = query.eq("user_id", user_id)
+
+    response = query.execute()
 
     timeline = []
     for report in response.data:
@@ -144,17 +168,23 @@ def get_timeline():
 
 
 @app.get("/trends/{metric}")
-def get_trends(metric: str):
-    response = supabase.table("reports").select(
+def get_trends(metric: str, authorization: str = Header(None)):
+    user_id = get_user_id_from_token(authorization)
+
+    query = supabase.table("reports").select(
         "id, extracted_data, uploaded_at"
-    ).order("uploaded_at", desc=False).execute()
+    ).order("uploaded_at", desc=False)
+
+    if user_id:
+        query = query.eq("user_id", user_id)
+
+    response = query.execute()
 
     trend_points = []
     for report in response.data:
         extracted = report.get("extracted_data") or {}
         lab_values = extracted.get("lab_values") or {}
 
-        # Case-insensitive search for the metric
         for test_name, test_data in lab_values.items():
             if metric.lower() in test_name.lower():
                 trend_points.append({
@@ -167,25 +197,26 @@ def get_trends(metric: str):
                     "uploaded_at": report["uploaded_at"]
                 })
 
-    return {
-        "metric": metric,
-        "data_points": trend_points
-    }
+    return {"metric": metric, "data_points": trend_points}
 
 
 @app.post("/chat")
-async def chat(request: dict):
+async def chat(request: dict, authorization: str = Header(None)):
+    user_id = get_user_id_from_token(authorization)
     user_message = request.get("message", "")
-    
+
     if not user_message:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    # Fetch all reports from Supabase
-    response = supabase.table("reports").select(
+    query = supabase.table("reports").select(
         "file_name, extracted_data, uploaded_at"
-    ).order("uploaded_at", desc=False).execute()
+    ).order("uploaded_at", desc=False)
 
-    # Build context from all reports
+    if user_id:
+        query = query.eq("user_id", user_id)
+
+    response = query.execute()
+
     reports_context = ""
     for report in response.data:
         extracted = report.get("extracted_data") or {}
@@ -224,19 +255,24 @@ Answer:"""
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
-    
+
 
 @app.get("/doctor-brief")
-def get_doctor_brief():
-    # Fetch all reports
-    response = supabase.table("reports").select(
+def get_doctor_brief(authorization: str = Header(None)):
+    user_id = get_user_id_from_token(authorization)
+
+    query = supabase.table("reports").select(
         "file_name, extracted_data, uploaded_at"
-    ).order("uploaded_at", desc=False).execute()
+    ).order("uploaded_at", desc=False)
+
+    if user_id:
+        query = query.eq("user_id", user_id)
+
+    response = query.execute()
 
     if not response.data:
         raise HTTPException(status_code=404, detail="No reports found")
 
-    # Build context from all reports
     reports_context = ""
     all_diagnoses = []
     all_medicines = []
@@ -251,7 +287,6 @@ def get_doctor_brief():
         medicines = extracted.get("medicines") or []
         all_medicines.extend(medicines)
 
-        # Find abnormal lab values
         lab_values = extracted.get("lab_values") or {}
         for test_name, test_data in lab_values.items():
             value = test_data.get("value")
@@ -363,7 +398,6 @@ def view_shared_report(token: str):
             "report_type": extracted.get("report_type"),
         })
 
-    # Generate doctor brief
     reports_context = ""
     for report in reports.data:
         extracted = report.get("extracted_data") or {}
@@ -412,4 +446,4 @@ def revoke_share_link(token: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"message": "Share link revoked successfully"}        
+    return {"message": "Share link revoked successfully"}
