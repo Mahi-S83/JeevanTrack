@@ -452,3 +452,29 @@ def revoke_share_link(token: str):
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": "Share link revoked successfully"}
+
+
+@app.delete("/reports/{report_id}")
+def delete_report(report_id: str, authorization: str = Header(None)):
+    user_id = get_user_id_from_token(authorization)
+
+    # Verify the report belongs to this user
+    try:
+        report = supabase.table("reports").select("id, user_id").eq("id", report_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if not report.data:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    # If user is logged in, make sure they own this report
+    if user_id and report.data[0].get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this report")
+
+    # Delete the report
+    try:
+        supabase.table("reports").delete().eq("id", report_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+
+    return {"message": "Report deleted successfully", "report_id": report_id}
