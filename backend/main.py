@@ -7,7 +7,6 @@ import os
 import shutil
 import json
 import secrets
-import traceback
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -111,7 +110,7 @@ async def upload_report(
 
     if file.filename.lower().endswith(".pdf"):
         mime_type = "application/pdf"
-    elif file.filename.lower().endswith(".png"):
+    elif file.filename.lower().endswith((".png",)):
         mime_type = "image/png"
     else:
         mime_type = "image/jpeg"
@@ -119,55 +118,23 @@ async def upload_report(
     with open(file_path, "rb") as f:
         file_bytes = f.read()
 
-    # AI Extraction
     try:
         extracted_data = extract_with_gemini(file_bytes, mime_type)
-
     except json.JSONDecodeError:
-        print("=== JSON PARSE ERROR ===")
-        print(traceback.format_exc())
-
-        return {
-            "success": False,
-            "error": "We couldn't extract data from this report. Please upload a clearer image or PDF."
-        }
-
+        raise HTTPException(status_code=500, detail="Failed to parse extraction result as JSON")
     except Exception as e:
-        print("=== GEMINI ERROR ===")
-        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Gemini extraction failed: {str(e)}")
 
-        error_text = str(e).lower()
-
-        if "quota" in error_text or "429" in error_text:
-            return {
-                "success": False,
-                "error": "Daily AI extraction limit reached. Try again tomorrow."
-            }
-
-        return {
-            "success": False,
-            "error": "Unable to process this medical report right now. Please try again later."
-        }
-
-    # Database Insert
     try:
         result = supabase.table("reports").insert({
             "file_name": file.filename,
             "extracted_data": extracted_data,
             "user_id": user_id
         }).execute()
-
-    except Exception:
-        print("=== DATABASE ERROR ===")
-        print(traceback.format_exc())
-
-        return {
-            "success": False,
-            "error": "Unable to save the report right now. Please try again later."
-        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database insert failed: {str(e)}")
 
     return {
-        "success": True,
         "message": "File uploaded and processed successfully",
         "report_id": result.data[0]["id"] if result.data else None,
         "file_name": file.filename,
