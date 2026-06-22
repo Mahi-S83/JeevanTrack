@@ -48,3 +48,44 @@ body {
   background: var(--teal);
   border-radius: 99px;
 }
+/* React DatePicker overrides */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker__input-container input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid rgba(129,202,214,0.25);
+  border-radius: 8px;
+  outline: none;
+  font-size: 14px;
+}
+
+.react-datepicker__input-container input:focus {
+  border-color: #81CAD6;
+  box-shadow: 0 0 0 2px rgba(129,202,214,0.2);
+}
+
+.react-datepicker {
+  border: 1px solid rgba(129,202,214,0.25);
+  border-radius: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.react-datepicker__header {
+  background: #f5fafb;
+  border-bottom: 1px solid rgba(129,202,214,0.25);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.react-datepicker__day--selected {
+  background: #81CAD6 !important;
+  border-radius: 50% !important;
+}
+
+.react-datepicker__day:hover {
+  background: #81CAD6/20 !important;
+  border-radius: 50% !important;
+}
