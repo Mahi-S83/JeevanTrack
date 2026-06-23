@@ -1,1089 +1,891 @@
 "use client";
-import { useState } from "react";
-import { 
-  FlaskConical, 
-  Pill, 
-  Scan, 
-  Upload, 
-  Loader2, 
-  Check, 
-  X, 
-  Plus
+import { useState, useEffect } from "react";
+import {
+  FlaskConical,
+  Pill,
+  Scan,
+  Upload,
+  Loader2,
+  Check,
+  AlertCircle,
+  Shield,
+  Search,
+  FolderOpen,
+  FolderPlus,
+  ArrowRight,
+  ArrowLeft,
+  Sparkles,
+  ChevronRight,
+  FileText,
+  Calendar,
+  User,
+  Building2,
+  PenLine
 } from "lucide-react";
 import { apiUpload } from "@/lib/api";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
+import {
+  getConditions,
+  upsertCondition,
+  addDocumentToCondition,
+  setNeedsRefresh,
+  type Condition,
+} from "@/lib/conditionStorage";
+import { isDemoUser } from "@/lib/demoMode";
 
-// Types
 type ReportType = "lab" | "prescription" | "imaging" | null;
-type Status = "Resolved" | "Recurring" | "Active";
-type ComplaintType = "Acute" | "Chronic";
+type StatusType = "active" | "recurring" | "resolved";
 
-// Lab test row
-type LabTest = {
-  id: string;
-  name: string;
-  value: string;
-  unit: string;
-  normalRange: string;
+const statusColors = {
+  active: "bg-[#DC3E26]/10 text-[#DC3E26] border-[#DC3E26]/30",
+  recurring: "bg-[#EDCD44]/20 text-[#7a6200] border-[#EDCD44]/30",
+  resolved: "bg-[#81CAD6]/20 text-[#2a7a86] border-[#81CAD6]/30",
 };
 
-// Medicine row
-type Medicine = {
-  id: string;
-  name: string;
-  dosage: string;
-  frequency: string;
-  duration: string;
+const statusLabels = {
+  active: "Active",
+  recurring: "Recurring",
+  resolved: "Resolved",
 };
 
-// Imaging types
-var imagingTypes = ["X-ray", "MRI", "CT Scan", "Ultrasound", "Discharge Summary", "Other"];
-type Visit = {
-  id: string;
-  type?: string;
-  title?: string;
-  date?: string;
-  doctor?: string;
-  hospital?: string;
-  linkedDocuments?: any[];
-};
+const typeOptions = [
+  { type: "lab", icon: FlaskConical, label: "Lab Report", desc: "Blood tests, pathology reports", color: "#81CAD6" },
+  { type: "prescription", icon: Pill, label: "Prescription", desc: "Doctor prescriptions, medications", color: "#EDCD44" },
+  { type: "imaging", icon: Scan, label: "Imaging", desc: "X-rays, MRI, CT scans", color: "#DC3E26" },
+];
 
-type LinkMatch = {
-  visit: Visit;
-  reason: string;
-};
-// Generate unique ID
-function generateId() {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-}
-
-// Find related visit with strict matching logic
-function findRelatedVisit(
-  newVisit: Visit,
-  allVisits: Visit[]
-): LinkMatch | null {
-  // Safety check - if newVisit or allVisits is invalid, return null
-  if (!newVisit || !allVisits || allVisits.length === 0) {
-    return null;
-  }
-
-  // Remove the visit being saved from the list
-  var others = [];
-  for (var i = 0; i < allVisits.length; i++) {
-    if (allVisits[i].id !== newVisit.id) {
-      others.push(allVisits[i]);
-    }
-  }
-  
-  if (others.length === 0) {
-    return null;
-  }
-
-  // Safety check for date
-  var newDate = newVisit.date ? new Date(newVisit.date) : new Date();
-  if (isNaN(newDate.getTime())) {
-    newDate = new Date();
-  }
-
-  var newDoctor = '';
-  var newHospital = '';
-
-  if (newVisit.doctor) {
-    newDoctor = newVisit.doctor.toLowerCase().trim();
-  }
-  if (newVisit.hospital) {
-    newHospital = newVisit.hospital.toLowerCase().trim();
-  }
-
-  for (var j = 0; j < others.length; j++) {
-    var v = others[j];
-    
-    // Safety check for v.date
-    var vDate = v.date ? new Date(v.date) : new Date();
-    if (isNaN(vDate.getTime())) {
-      vDate = new Date();
-    }
-    
-    var timeDiff = newDate.getTime() - vDate.getTime();
-    var daysDiff = Math.abs(timeDiff / (1000 * 60 * 60 * 24));
-    
-    var sameDoctor = false;
-    if (newDoctor && v.doctor) {
-      sameDoctor = (v.doctor.toLowerCase().trim() === newDoctor);
-    }
-    
-    var sameHospital = false;
-    if (newHospital && v.hospital) {
-      sameHospital = (v.hospital.toLowerCase().trim() === newHospital);
-    }
-    
-    var within7Days = (daysDiff <= 7);
-    var within30Days = (daysDiff <= 30);
-
-    // Strong match: same doctor AND within 7 days
-    if (sameDoctor && within7Days) {
-      var daysText = Math.round(daysDiff) + ' day';
-      if (Math.round(daysDiff) !== 1) {
-        daysText = daysText + 's';
-      }
-      return {
-        visit: v,
-        reason: 'Same doctor · ' + Math.round(daysDiff) + ' ' + daysText + ' apart'
-      };
-    }
-
-    // Medium match: same hospital AND within 7 days
-    if (sameHospital && within7Days) {
-      return {
-        visit: v,
-        reason: 'Same hospital · ' + Math.round(daysDiff) + ' days apart'
-      };
-    }
-
-    // Weak match: same doctor within 30 days with complementary types
-    var complementary = false;
-    var newType = newVisit.type || '';
-    var vType = v.type || '';
-    if ((newType === 'lab_report' && vType === 'prescription') ||
-        (newType === 'prescription' && vType === 'lab_report')) {
-      complementary = true;
-    }
-    
-    if (sameDoctor && within30Days && complementary) {
-      return {
-        visit: v,
-        reason: 'Same doctor · ' + Math.round(daysDiff) + ' days apart · Possibly related'
-      };
-    }
-  }
-
-  // No match found
-  return null;
-}
+const popularConditions = [
+  { name: "Iron Deficiency Anemia", status: "active" },
+  { name: "Vitamin D Deficiency", status: "recurring" },
+  { name: "Dengue Fever", status: "resolved" },
+  { name: "Hypertension", status: "active" },
+];
 
 export default function UploadPage() {
-  // State for flow
-  var [step, setStep] = useState<"type" | "upload" | "processing" | "form" | "link" | "add">("type");
-  var [selectedType, setSelectedType] = useState<ReportType>(null);
-  var [file, setFile] = useState<File | null>(null);
-  var [error, setError] = useState("");
-  var [linkMatch, setLinkMatch] = useState<LinkMatch | null>(null);
-  
-  // Lab report state
-  var [labDate, setLabDate] = useState<Date | null>(new Date());
-  var [labHospital, setLabHospital] = useState("");
-  var [labDoctor, setLabDoctor] = useState("");
-  var [labDiagnosis, setLabDiagnosis] = useState("");
-  var [labStatus, setLabStatus] = useState<Status>("Active");
-  var [labTests, setLabTests] = useState<LabTest[]>([
-    { id: generateId(), name: "", value: "", unit: "", normalRange: "" }
-  ]);
+  // Step state: "condition" | "upload" | "review" | "manual"
+  const [step, setStep] = useState<"condition" | "upload" | "review" | "manual">("condition");
 
-  // Prescription state
-  var [prescriptionDate, setPrescriptionDate] = useState<Date | null>(new Date());
-  var [prescriptionDoctor, setPrescriptionDoctor] = useState("");
-  var [prescriptionHospital, setPrescriptionHospital] = useState("");
-  var [prescriptionDiagnosis, setPrescriptionDiagnosis] = useState("");
-  var [prescriptionComplaint, setPrescriptionComplaint] = useState<ComplaintType>("Acute");
-  var [medicines, setMedicines] = useState<Medicine[]>([
-    { id: generateId(), name: "", dosage: "", frequency: "", duration: "" }
-  ]);
+  // Condition selection state
+  const [conditions, setConditions] = useState<Condition[]>([]);
+  const [isNewCondition, setIsNewCondition] = useState(false);
+  const [selectedConditionId, setSelectedConditionId] = useState("");
+  const [newConditionName, setNewConditionName] = useState("");
+  const [status, setStatus] = useState<StatusType>("active");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCondition, setSelectedCondition] = useState<Condition | null>(null);
 
-  // Imaging state
-  var [imagingType, setImagingType] = useState("X-ray");
-  var [imagingDate, setImagingDate] = useState<Date | null>(new Date());
-  var [imagingBodyPart, setImagingBodyPart] = useState("");
-  var [imagingHospital, setImagingHospital] = useState("");
-  var [imagingDoctor, setImagingDoctor] = useState("");
-  var [imagingFinding, setImagingFinding] = useState("");
-  var [imagingImpression, setImagingImpression] = useState("");
+  // Upload state
+  const [selectedType, setSelectedType] = useState<ReportType>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [uploadResult, setUploadResult] = useState<any>(null);
+  const [isComplete, setIsComplete] = useState(false);
+  const [uploadAttempted, setUploadAttempted] = useState(false);
 
-  // Link state
-  var [showLinkPrompt, setShowLinkPrompt] = useState(false);
-  var [showAddPrompt, setShowAddPrompt] = useState(false);
+  // Manual entry state
+  const [manualData, setManualData] = useState({
+    reportType: "Lab Report" as "Lab Report" | "Prescription" | "Imaging",
+    date: "",
+    doctor: "",
+    hospital: "",
+    diagnosis: "",
+    notes: "",
+  });
 
-  // Get theme color based on type
-  function getTheme() {
-    switch(selectedType) {
-      case "lab": return { color: "#81CAD6", bg: "bg-[#81CAD6]", lightBg: "bg-[#81CAD6]/10", text: "text-[#81CAD6]", border: "border-[#81CAD6]" };
-      case "prescription": return { color: "#EDCD44", bg: "bg-[#EDCD44]", lightBg: "bg-[#EDCD44]/10", text: "text-[#EDCD44]", border: "border-[#EDCD44]" };
-      case "imaging": return { color: "#DC3E26", bg: "bg-[#DC3E26]", lightBg: "bg-[#DC3E26]/10", text: "text-[#DC3E26]", border: "border-[#DC3E26]" };
-      default: return { color: "#81CAD6", bg: "bg-[#81CAD6]", lightBg: "bg-[#81CAD6]/10", text: "text-[#81CAD6]", border: "border-[#81CAD6]" };
+  // Load conditions on mount
+  useEffect(() => {
+    const allConditions = getConditions();
+    setConditions(allConditions);
+  }, []);
+
+  const filteredConditions = conditions.filter((c) =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Handle condition selection
+  const handleConditionSubmit = () => {
+    if (isNewCondition && !newConditionName.trim()) {
+      setError("Please enter a condition name.");
+      return;
     }
-  }
-
-  var theme = getTheme();
-
-  // Lab test handlers
-  function addLabTest() {
-    var newTests = labTests.slice();
-    newTests.push({ id: generateId(), name: "", value: "", unit: "", normalRange: "" });
-    setLabTests(newTests);
-  }
-
-  function removeLabTest(id: string) {
-    if (labTests.length > 1) {
-      setLabTests(labTests.filter(function(t) { return t.id !== id; }));
+    if (!isNewCondition && !selectedConditionId) {
+      setError("Please select a condition.");
+      return;
     }
-  }
-
-  function updateLabTest(id: string, field: keyof LabTest, value: string) {
-    setLabTests(labTests.map(function(t) {
-      if (t.id === id) {
-        var updated = { ...t };
-        updated[field] = value;
-        return updated;
-      }
-      return t;
-    }));
-  }
-
-  // Medicine handlers
-  function addMedicine() {
-    var newMeds = medicines.slice();
-    newMeds.push({ id: generateId(), name: "", dosage: "", frequency: "", duration: "" });
-    setMedicines(newMeds);
-  }
-
-  function removeMedicine(id: string) {
-    if (medicines.length > 1) {
-      setMedicines(medicines.filter(function(m) { return m.id !== id; }));
-    }
-  }
-
-  function updateMedicine(id: string, field: keyof Medicine, value: string) {
-    setMedicines(medicines.map(function(m) {
-      if (m.id === id) {
-        var updated = { ...m };
-        updated[field] = value;
-        return updated;
-      }
-      return m;
-    }));
-  }
-
-  // Handle file upload
-  var handleFileSelect = async function(selectedFile: File) {
-    setFile(selectedFile);
-    setStep("processing");
     setError("");
 
-    try {
-      var result = await apiUpload('/upload', selectedFile);
-      var extracted = result.extracted || {};
-      
-      // Auto-fill based on extracted data
-      if (selectedType === "lab") {
-        if (extracted.report_date) {
-          setLabDate(new Date(extracted.report_date));
-        }
-        setLabHospital(extracted.hospital_name || "");
-        setLabDoctor(extracted.doctor_name || "");
-        setLabDiagnosis(extracted.diagnosis || "");
-        
-        // Map lab values to test rows
-        if (extracted.lab_values) {
-          var testEntries = Object.entries(extracted.lab_values);
-          var tests = testEntries.map(function([key, val]: [string, any]) {
-            return {
-              id: generateId(),
-              name: key,
-              value: val.value ? val.value.toString() : "",
-              unit: val.unit || "",
-              normalRange: val.normal_range || "",
-            };
-          });
-          if (tests.length > 0) {
-            setLabTests(tests.slice(0, 10));
-          }
-        }
-      } else if (selectedType === "prescription") {
-        if (extracted.report_date) {
-          setPrescriptionDate(new Date(extracted.report_date));
-        }
-        setPrescriptionDoctor(extracted.doctor_name || "");
-        setPrescriptionHospital(extracted.hospital_name || "");
-        setPrescriptionDiagnosis(extracted.diagnosis || "");
-        
-        if (extracted.medicines && extracted.medicines.length > 0) {
-          var meds = extracted.medicines.map(function(m: string) {
-            return {
-              id: generateId(),
-              name: m,
-              dosage: "",
-              frequency: "",
-              duration: "",
-            };
-          });
-          setMedicines(meds);
-        }
-      }
-      
-      setStep("form");
-    } catch (err: any) {
-      setError(err.message || "Failed to process report. Please try again.");
-      setStep("upload");
-    }
-  };
+    let condition: Condition;
 
-  // Handle save
-  var handleSave = function() {
-    // Get existing visits from localStorage
-   var existingVisits: Visit[] = [];
-    try {
-      existingVisits = JSON.parse(localStorage.getItem('jeevantrack_visits') || '[]');
-    } catch (e) {
-      existingVisits = [];
-    }
-    
-    // Create the new visit object
-    var newVisit = {
-      id: 'v_' + Date.now(),
-      type: selectedType || 'unknown',
-      title: labDiagnosis || prescriptionDiagnosis || imagingFinding || 'Untitled',
-      date: labDate ? labDate.toISOString() : (prescriptionDate ? prescriptionDate.toISOString() : (imagingDate ? imagingDate.toISOString() : new Date().toISOString())),
-      doctor: labDoctor || prescriptionDoctor || imagingDoctor || '',
-      hospital: labHospital || prescriptionHospital || imagingHospital || '',
-      status: labStatus || prescriptionComplaint || 'active',
-      testResults: labTests || [],
-      medicines: medicines || [],
-      file_name: file ? file.name : '',
-      linkedDocuments: [],
-      createdAt: new Date().toISOString()
-    };
-
-    // Find related visit
-    var related = findRelatedVisit(newVisit, existingVisits);
-
-    if (related) {
-      // Show the link prompt with real data
-      setLinkMatch(related);
-      setStep('link');
-      setShowLinkPrompt(true);
+    if (isNewCondition) {
+      condition = {
+        id: "cond_" + Date.now(),
+        name: newConditionName.trim(),
+        status: status,
+        documents: [],
+      };
+      upsertCondition(condition);
     } else {
-      // No match found - save the visit separately
-      existingVisits.push(newVisit);
-      localStorage.setItem('jeevantrack_visits', JSON.stringify(existingVisits));
-      // Skip to "Add another document?"
-      setStep('add');
-      setShowAddPrompt(true);
+      const existing = conditions.find((c) => c.id === selectedConditionId);
+      if (!existing) {
+        setError("Condition not found.");
+        return;
+      }
+      condition = existing;
+    }
+
+    setSelectedCondition(condition);
+    setStep("upload");
+    setUploadAttempted(false);
+  };
+
+  // Handle file upload with fallback
+  const handleFileSelect = async (selectedFile: File) => {
+    setFile(selectedFile);
+    setIsLoading(true);
+    setError("");
+    setIsComplete(false);
+    setUploadAttempted(true);
+
+    try {
+      const result = await apiUpload("/upload", selectedFile);
+      setUploadResult(result);
+      setIsComplete(true);
+      setStep("review");
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      // Check if it's a Gemini quota error (429 or 503 or 500 with quota message)
+      const errorMsg = err.message || "";
+      if (errorMsg.includes("429") || errorMsg.includes("503") || errorMsg.includes("RESOURCE_EXHAUSTED") || errorMsg.includes("quota")) {
+        // Show manual entry fallback
+        setError("AI extraction is temporarily unavailable. You can continue by entering the report details manually.");
+        setStep("manual");
+        // Pre-fill manual form with extracted info if available
+        if (uploadResult?.extracted) {
+          const extracted = uploadResult.extracted;
+          setManualData({
+            reportType: selectedType === "lab" ? "Lab Report" : selectedType === "prescription" ? "Prescription" : "Imaging",
+            date: extracted.report_date || extracted.visit_date || "",
+            doctor: extracted.doctor_name || extracted.physician || "",
+            hospital: extracted.hospital_name || extracted.lab_name || "",
+            diagnosis: extracted.diagnosis || "",
+            notes: "",
+          });
+        }
+      } else {
+        setError(err.message || "Failed to process your file. Please try again.");
+        setStep("upload");
+      }
+      setIsLoading(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  var handleLinkExisting = function() {
-    // Link the visits
-    var visits: Visit[] = JSON.parse(
-  localStorage.getItem('jeevantrack_visits') || '[]'
-);
-    var updatedVisits = visits.map(function(v: Visit) {
-      if (linkMatch && v.id === linkMatch.visit.id) {
-        if (!v.linkedDocuments) {
-          v.linkedDocuments = [];
+  // Handle manual save
+ const handleManualSave = () => {
+  if (!selectedCondition) return;
+
+  const document = {
+    id: "doc_" + Date.now(),
+    name: file?.name || "Manual Entry - " + manualData.reportType,
+    type: (manualData.reportType === "Lab Report" ? "Lab Report" : manualData.reportType === "Prescription" ? "Prescription" : "Imaging") as "Lab Report" | "Prescription" | "Imaging",
+    fileUrl: "",
+    reportId: "manual_" + Date.now(),
+    uploadedAt: new Date().toISOString(),
+    reportDate: manualData.date || new Date().toISOString().split("T")[0],
+    // Add a lab value so trends can show something
+    extractedData: {
+      lab_values: manualData.diagnosis ? {
+        "Diagnosis": {
+          value: manualData.diagnosis,
+          unit: "",
+          normal_range: ""
         }
-        // Create a copy of the new visit without the id
-        var newVisitCopy = {
-          type: selectedType,
-          title: labDiagnosis || prescriptionDiagnosis || imagingFinding || 'Untitled',
-          date: labDate ? labDate.toISOString() : (prescriptionDate ? prescriptionDate.toISOString() : (imagingDate ? imagingDate.toISOString() : new Date().toISOString())),
-          doctor: labDoctor || prescriptionDoctor || imagingDoctor || '',
-          hospital: labHospital || prescriptionHospital || imagingHospital || '',
-          testResults: labTests || [],
-          medicines: medicines || [],
-        };
-        v.linkedDocuments.push(newVisitCopy);
-      }
-      return v;
-    });
-    
-    // Remove the new visit as standalone (it's now linked)
-    var newVisitId = 'v_' + Date.now();
-    var withoutNew = updatedVisits.filter(function(v: Visit) {
-      return v.id !== newVisitId;
-    });
-    
-    localStorage.setItem('jeevantrack_visits', JSON.stringify(withoutNew));
-    setShowLinkPrompt(false);
-    setStep('add');
-    setShowAddPrompt(true);
+      } : {}
+    }
   };
 
-  var handleSaveSeparate = function() {
-    // Save the visit separately
- var visits: Visit[] = JSON.parse(
-  localStorage.getItem('jeevantrack_visits') || '[]'
-);
-    var newVisit = {
-      id: 'v_' + Date.now(),
-      type: selectedType || 'unknown',
-      title: labDiagnosis || prescriptionDiagnosis || imagingFinding || 'Untitled',
-      date: labDate ? labDate.toISOString() : (prescriptionDate ? prescriptionDate.toISOString() : (imagingDate ? imagingDate.toISOString() : new Date().toISOString())),
-      doctor: labDoctor || prescriptionDoctor || imagingDoctor || '',
-      hospital: labHospital || prescriptionHospital || imagingHospital || '',
-      status: labStatus || prescriptionComplaint || 'active',
-      testResults: labTests || [],
-      medicines: medicines || [],
-      file_name: file ? file.name : '',
-      linkedDocuments: [],
-      createdAt: new Date().toISOString()
+  addDocumentToCondition(selectedCondition.id, document);
+  setNeedsRefresh(true);
+
+  // Also save to a separate trends store
+  if (manualData.diagnosis) {
+    const trendEntry = {
+      date: manualData.date || new Date().toISOString().split("T")[0],
+      test_name: "Diagnosis",
+      value: 1,
+      unit: "",
+      normal_range: ""
     };
-    visits.push(newVisit);
-    localStorage.setItem('jeevantrack_visits', JSON.stringify(visits));
-    
-    setShowLinkPrompt(false);
-    setStep('add');
-    setShowAddPrompt(true);
-  };
+    // Store in localStorage for trends
+    const existingTrends = JSON.parse(localStorage.getItem('jeevantrack_trends') || '[]');
+    existingTrends.push(trendEntry);
+    localStorage.setItem('jeevantrack_trends', JSON.stringify(existingTrends));
+  }
 
-  var handleAddAnother = function(type: ReportType) {
-    setSelectedType(type);
-    setStep("upload");
-    setShowAddPrompt(false);
-  };
+  resetForm();
+  setStep("condition");
+  setConditions(getConditions());
+  
+  alert("Report saved successfully to " + selectedCondition.name + "!");
+};
 
-  var handleDone = function() {
-    setShowAddPrompt(false);
-    // Reset everything
-    setStep("type");
+  const resetForm = () => {
     setSelectedType(null);
     setFile(null);
-    setLabTests([{ id: generateId(), name: "", value: "", unit: "", normalRange: "" }]);
-    setMedicines([{ id: generateId(), name: "", dosage: "", frequency: "", duration: "" }]);
-    setLinkMatch(null);
+    setUploadResult(null);
+    setIsComplete(false);
+    setError("");
+    setSelectedConditionId("");
+    setNewConditionName("");
+    setIsNewCondition(false);
+    setStatus("active");
+    setSearchQuery("");
+    setUploadAttempted(false);
+    setManualData({
+      reportType: "Lab Report",
+      date: "",
+      doctor: "",
+      hospital: "",
+      diagnosis: "",
+      notes: "",
+    });
   };
 
-  // Type selector
-  if (step === "type") {
-    return (
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-2xl font-medium text-[#1a2e32] mb-2">Upload Report</h1>
-        <p className="text-[#5a7a80] mb-8">What type of report are you uploading?</p>
+  const goBackToCondition = () => {
+    setStep("condition");
+    resetForm();
+  };
 
-        <div className="grid md:grid-cols-3 gap-4 mb-6">
-          {[
-            { type: "lab", icon: FlaskConical, title: "Lab Report", desc: "Blood, urine, thyroid, CBC", color: "#81CAD6", borderColor: "border-[#81CAD6]", hoverBg: "hover:bg-[#81CAD6]/5" },
-            { type: "prescription", icon: Pill, title: "Prescription", desc: "Medicines, doctor visit", color: "#EDCD44", borderColor: "border-[#EDCD44]", hoverBg: "hover:bg-[#EDCD44]/5" },
-            { type: "imaging", icon: Scan, title: "Imaging / Other", desc: "X-ray, MRI, CT, discharge", color: "#DC3E26", borderColor: "border-[#DC3E26]", hoverBg: "hover:bg-[#DC3E26]/5" },
-          ].map(function(item) {
-            return (
-              <div
-                key={item.type}
-                onClick={function() {
-                  setSelectedType(item.type as ReportType);
-                  setStep("upload");
-                }}
-                className={"bg-white rounded-2xl border-2 " + item.borderColor + " p-6 cursor-pointer transition hover:shadow-lg " + item.hoverBg}
-              >
-                <item.icon className="w-10 h-10 mb-3" style={{ color: item.color }} />
-                <h3 className="font-medium text-[#1a2e32] text-base">{item.title}</h3>
-                <p className="text-[#5a7a80] text-sm mt-1">{item.desc}</p>
+  const goBackToUpload = () => {
+    setStep("upload");
+    setError("");
+  };
+
+  const getStatusColor = (status: string) => {
+    return statusColors[status as keyof typeof statusColors] || statusColors.active;
+  };
+
+  // ========================
+  // STEP 1: CONDITION SELECTION
+  // ========================
+  if (step === "condition") {
+    return (
+      <div className="min-h-screen bg-[#f5fafb] flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-2xl">
+          {/* Step Indicator */}
+          <div className="flex items-center gap-2 mb-8 justify-center">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#81CAD6] text-white flex items-center justify-center text-sm font-semibold">
+                1
               </div>
-            );
-          })}
-        </div>
-
-        <div className="text-center">
-          <button className="text-[#81CAD6] text-sm hover:underline">
-            Not sure? Let AI detect automatically →
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Upload zone
-  if (step === "upload") {
-    var typeLabels = {
-      lab: "Lab Report",
-      prescription: "Prescription",
-      imaging: "Imaging"
-    };
-
-    return (
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center gap-3 mb-2">
-          <h1 className="text-2xl font-medium text-[#1a2e32]">Upload Report</h1>
-          <span className={"px-3 py-1 rounded-full text-xs font-medium " + theme.bg + " text-white"}>
-            {typeLabels[selectedType!]}
-          </span>
-          <button
-            onClick={function() { setStep("type"); }}
-            className="text-sm text-[#5a7a80] hover:text-[#1a2e32] ml-auto"
-          >
-            Change type
-          </button>
-        </div>
-        <p className="text-[#5a7a80] mb-8">Upload your {typeLabels[selectedType!].toLowerCase()}</p>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg mb-4">
-            {error}
-          </div>
-        )}
-
-        <div
-          className={"border-2 border-dashed " + theme.border + " rounded-xl p-12 text-center bg-white hover:" + theme.lightBg + " transition cursor-pointer"}
-          onDragOver={function(e) { e.preventDefault(); }}
-          onDrop={function(e) {
-            e.preventDefault();
-            if (e.dataTransfer.files[0]) {
-              handleFileSelect(e.dataTransfer.files[0]);
-            }
-          }}
-          onClick={function() { 
-            var input = document.getElementById("fileInput");
-            if (input) input.click();
-          }}
-        >
-          <Upload className={"w-12 h-12 mx-auto mb-4 " + theme.text} />
-          <p className="text-[#1a2e32] font-medium">
-            Drop your {typeLabels[selectedType!].toLowerCase()} here — PDF, image, or scan
-          </p>
-          <p className="text-[#5a7a80] text-sm mt-1">or browse files</p>
-          <input
-            id="fileInput"
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg"
-            className="hidden"
-            onChange={function(e) {
-              if (e.target.files && e.target.files[0]) {
-                handleFileSelect(e.target.files[0]);
-              }
-            }}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // Processing state
-  if (step === "processing") {
-    var typeLabels2 = {
-      lab: "Lab Report",
-      prescription: "Prescription",
-      imaging: "Imaging"
-    };
-
-    return (
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-xl border border-[rgba(129,202,214,0.25)] p-12 text-center">
-          <Loader2 className={"w-10 h-10 animate-spin mx-auto mb-4 " + theme.text} />
-          <p className="text-[#1a2e32] font-medium text-lg">
-            AI is reading your {typeLabels2[selectedType!].toLowerCase()}…
-          </p>
-          <p className="text-[#5a7a80] text-sm mt-2">
-            Extracting fields automatically — takes about 10 seconds
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Form - Lab Report
-  if (step === "form" && selectedType === "lab") {
-    return (
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-[#81CAD6] rounded-t-xl p-5 flex items-center gap-3">
-          <FlaskConical className="w-5 h-5 text-white" />
-          <h2 className="text-white font-medium">Lab Report Details</h2>
-        </div>
-
-        <div className="bg-white rounded-b-xl border border-[rgba(129,202,214,0.25)] border-t-0 p-6">
-          <div className="flex items-center gap-2 text-green-600 mb-4">
-            <Check className="w-5 h-5" />
-            <span className="font-medium">Report processed successfully</span>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Date of test</label>
-              <DatePicker
-                selected={labDate}
-                onChange={function(date: Date | null) { setLabDate(date); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81CAD6]"
-                dateFormat="yyyy-MM-dd"
-                placeholderText="Select date"
-              />
+              <span className="text-sm font-medium text-[#1a2e32]">Condition</span>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Lab / Hospital</label>
-              <input
-                type="text"
-                value={labHospital}
-                onChange={function(e) { setLabHospital(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="City Lab"
-              />
+            <div className="w-12 h-0.5 bg-[#81CAD6]/30"></div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#f5fafb] border-2 border-[#81CAD6]/30 text-[#5a7a80] flex items-center justify-center text-sm font-semibold">
+                2
+              </div>
+              <span className="text-sm text-[#5a7a80]">Upload</span>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Referring doctor</label>
-              <input
-                type="text"
-                value={labDoctor}
-                onChange={function(e) { setLabDoctor(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="Dr. Sharma"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Diagnosis</label>
-              <input
-                type="text"
-                value={labDiagnosis}
-                onChange={function(e) { setLabDiagnosis(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="Iron Deficiency Anemia"
-              />
+            <div className="w-12 h-0.5 bg-[#81CAD6]/30"></div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#f5fafb] border-2 border-[#81CAD6]/30 text-[#5a7a80] flex items-center justify-center text-sm font-semibold">
+                3
+              </div>
+              <span className="text-sm text-[#5a7a80]">Review</span>
             </div>
           </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-[#1a2e32] mb-2">Test Results</label>
-            <div className="border border-[rgba(129,202,214,0.25)] rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-[#f5fafb]">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium">Test Name</th>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium">Your Value</th>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium">Unit</th>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium">Normal Range</th>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {labTests.map(function(test) {
-                    return (
-                      <tr key={test.id} className="border-t border-[rgba(129,202,214,0.15)]">
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            value={test.name}
-                            onChange={function(e) { updateLabTest(test.id, "name", e.target.value); }}
-                            className="w-full px-2 py-1 border rounded"
-                            placeholder="e.g. Hemoglobin"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            value={test.value}
-                            onChange={function(e) { updateLabTest(test.id, "value", e.target.value); }}
-                            className="w-full px-2 py-1 border rounded"
-                            placeholder="9.8"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            value={test.unit}
-                            onChange={function(e) { updateLabTest(test.id, "unit", e.target.value); }}
-                            className="w-full px-2 py-1 border rounded"
-                            placeholder="g/dL"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            value={test.normalRange}
-                            onChange={function(e) { updateLabTest(test.id, "normalRange", e.target.value); }}
-                            className="w-full px-2 py-1 border rounded"
-                            placeholder="12-17"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <button
-                            onClick={function() { removeLabTest(test.id); }}
-                            className="text-[#5a7a80] hover:text-red-500"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <button
-              onClick={addLabTest}
-              className={"mt-3 px-4 py-2 rounded-full text-sm font-medium border-2 " + theme.border + " " + theme.text + " hover:" + theme.bg + " hover:text-white transition"}
-            >
-              <Plus className="w-4 h-4 inline mr-1" />
-              Add another test
-            </button>
+          {/* Header */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-semibold text-[#1a2e32]">Upload Report</h1>
+            <p className="text-[#5a7a80] mt-1">
+              First, tell us which condition this report belongs to.
+            </p>
           </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-[#1a2e32] mb-2">Status</label>
-            <div className="flex gap-2">
-              {["Resolved", "Recurring", "Active"].map(function(status) {
-                return (
-                  <button
-                    key={status}
-                    onClick={function() { setLabStatus(status as Status); }}
-                    className={"px-4 py-1.5 rounded-full text-sm transition " + (
-                      labStatus === status
-                        ? "bg-[#81CAD6] text-white"
-                        : "bg-white border border-[rgba(129,202,214,0.25)] text-[#5a7a80] hover:bg-[#f5fafb]"
-                    )}
-                  >
-                    {status}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <button
-            onClick={handleSave}
-            className="w-full bg-[#81CAD6] text-white py-3 rounded-full font-medium hover:bg-[#6bb8c4] transition"
-          >
-            Save to Timeline
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Form - Prescription
-  if (step === "form" && selectedType === "prescription") {
-    return (
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-[#EDCD44] rounded-t-xl p-5 flex items-center gap-3">
-          <Pill className="w-5 h-5 text-[#3d3000]" />
-          <h2 className="text-[#3d3000] font-medium">Prescription Details</h2>
-        </div>
-
-        <div className="bg-white rounded-b-xl border border-[rgba(129,202,214,0.25)] border-t-0 p-6">
-          <div className="flex items-center gap-2 text-green-600 mb-4">
-            <Check className="w-5 h-5" />
-            <span className="font-medium">Report processed successfully</span>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Date of visit</label>
-              <DatePicker
-                selected={prescriptionDate}
-                onChange={function(date: Date | null) { setPrescriptionDate(date); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#EDCD44]"
-                dateFormat="yyyy-MM-dd"
-                placeholderText="Select date"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Doctor name</label>
-              <input
-                type="text"
-                value={prescriptionDoctor}
-                onChange={function(e) { setPrescriptionDoctor(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="Dr. Sharma"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Hospital / Clinic</label>
-              <input
-                type="text"
-                value={prescriptionHospital}
-                onChange={function(e) { setPrescriptionHospital(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="City Clinic"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Diagnosis</label>
-              <input
-                type="text"
-                value={prescriptionDiagnosis}
-                onChange={function(e) { setPrescriptionDiagnosis(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="Iron Deficiency"
-              />
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-[#1a2e32] mb-2">Medicines Prescribed</label>
-            <div className="border border-[rgba(129,202,214,0.25)] rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-[#f5fafb]">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium">Medicine name</th>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium">Dosage</th>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium">Frequency</th>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium">Duration</th>
-                    <th className="px-3 py-2 text-left text-[#5a7a80] font-medium w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {medicines.map(function(med) {
-                    return (
-                      <tr key={med.id} className="border-t border-[rgba(129,202,214,0.15)]">
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            value={med.name}
-                            onChange={function(e) { updateMedicine(med.id, "name", e.target.value); }}
-                            className="w-full px-2 py-1 border rounded"
-                            placeholder="Iron tablets"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            value={med.dosage}
-                            onChange={function(e) { updateMedicine(med.id, "dosage", e.target.value); }}
-                            className="w-full px-2 py-1 border rounded"
-                            placeholder="100mg"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            value={med.frequency}
-                            onChange={function(e) { updateMedicine(med.id, "frequency", e.target.value); }}
-                            className="w-full px-2 py-1 border rounded"
-                            placeholder="Twice/day"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            value={med.duration}
-                            onChange={function(e) { updateMedicine(med.id, "duration", e.target.value); }}
-                            className="w-full px-2 py-1 border rounded"
-                            placeholder="30 days"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <button
-                            onClick={function() { removeMedicine(med.id); }}
-                            className="text-[#5a7a80] hover:text-red-500"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <button
-              onClick={addMedicine}
-              className="mt-3 px-4 py-2 rounded-full text-sm font-medium border-2 border-[#EDCD44] text-[#b09000] hover:bg-[#EDCD44] hover:text-[#3d3000] transition"
-            >
-              <Plus className="w-4 h-4 inline mr-1" />
-              Add medicine
-            </button>
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-[#1a2e32] mb-2">Complaint type</label>
-            <div className="flex gap-2">
-              {["Acute", "Chronic"].map(function(type) {
-                return (
-                  <button
-                    key={type}
-                    onClick={function() { setPrescriptionComplaint(type as ComplaintType); }}
-                    className={"px-4 py-1.5 rounded-full text-sm transition " + (
-                      prescriptionComplaint === type
-                        ? "bg-[#EDCD44] text-[#3d3000]"
-                        : "bg-white border border-[rgba(129,202,214,0.25)] text-[#5a7a80] hover:bg-[#f5fafb]"
-                    )}
-                  >
-                    {type}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <button
-            onClick={handleSave}
-            className="w-full bg-[#EDCD44] text-[#3d3000] py-3 rounded-full font-medium hover:bg-[#d4b83d] transition"
-          >
-            Save to Timeline
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Form - Imaging
-  if (step === "form" && selectedType === "imaging") {
-    return (
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-[#DC3E26] rounded-t-xl p-5 flex items-center gap-3">
-          <Scan className="w-5 h-5 text-white" />
-          <h2 className="text-white font-medium">Imaging / Other Report</h2>
-        </div>
-
-        <div className="bg-white rounded-b-xl border border-[rgba(129,202,214,0.25)] border-t-0 p-6">
-          <div className="flex items-center gap-2 text-green-600 mb-4">
-            <Check className="w-5 h-5" />
-            <span className="font-medium">Report processed successfully</span>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Report type</label>
-              <select
-                value={imagingType}
-                onChange={function(e) { setImagingType(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
+          {/* Main Card */}
+          <div className="bg-white rounded-2xl border border-[rgba(129,202,214,0.2)] p-8 shadow-sm">
+            {/* Toggle */}
+            <div className="bg-[#f5fafb] rounded-xl p-1 flex mb-6">
+              <button
+                onClick={() => { setIsNewCondition(false); setError(""); }}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2 ${
+                  !isNewCondition
+                    ? "bg-white text-[#1a2e32] shadow-sm"
+                    : "text-[#5a7a80] hover:text-[#1a2e32]"
+                }`}
               >
-                {imagingTypes.map(function(type) {
+                <FolderOpen className="w-4 h-4" />
+                Existing Condition
+              </button>
+              <button
+                onClick={() => { setIsNewCondition(true); setError(""); }}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2 ${
+                  isNewCondition
+                    ? "bg-white text-[#1a2e32] shadow-sm"
+                    : "text-[#5a7a80] hover:text-[#1a2e32]"
+                }`}
+              >
+                <FolderPlus className="w-4 h-4" />
+                New Condition
+              </button>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-4 text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {isNewCondition ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#1a2e32] mb-1">
+                    Condition Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newConditionName}
+                    onChange={(e) => setNewConditionName(e.target.value)}
+                    placeholder="e.g. Iron Deficiency Anemia"
+                    className="w-full px-4 py-3 border border-[rgba(129,202,214,0.25)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#81CAD6] text-sm"
+                  />
+                  <p className="text-xs text-[#5a7a80] mt-1">
+                    Examples: Iron Deficiency Anemia, Vitamin D Deficiency, Dengue Fever
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[#1a2e32] mb-2">
+                    Status
+                  </label>
+                  <div className="flex gap-3">
+                    {[
+                      { value: "active", label: "Active" },
+                      { value: "recurring", label: "Recurring" },
+                      { value: "resolved", label: "Resolved" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setStatus(opt.value as StatusType)}
+                        className={`px-4 py-2 rounded-full text-sm font-medium border transition ${
+                          status === opt.value
+                            ? getStatusColor(opt.value) + " ring-2 ring-offset-2 ring-[#81CAD6]"
+                            : "bg-white border-[rgba(129,202,214,0.2)] text-[#5a7a80] hover:border-[#81CAD6]"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="relative mb-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5a7a80]" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search for a condition..."
+                    className="w-full pl-9 pr-4 py-2.5 border border-[rgba(129,202,214,0.25)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#81CAD6] text-sm"
+                  />
+                </div>
+
+                {conditions.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-[#5a7a80] text-sm">No conditions yet.</p>
+                    <p className="text-[#5a7a80] text-sm">Create one by selecting "New Condition".</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto">
+                    {filteredConditions.map((c) => {
+                      const statusColor = getStatusColor(c.status);
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => setSelectedConditionId(c.id)}
+                          className={`p-3 rounded-xl border text-left transition ${
+                            selectedConditionId === c.id
+                              ? "border-[#81CAD6] bg-[#81CAD6]/5 ring-2 ring-[#81CAD6]/20"
+                              : "border-[rgba(129,202,214,0.2)] hover:border-[#81CAD6]"
+                          }`}
+                        >
+                          <p className="font-medium text-[#1a2e32] text-sm">{c.name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor}`}>
+                              {statusLabels[c.status as keyof typeof statusLabels] || "Active"}
+                            </span>
+                            <span className="text-xs text-[#5a7a80]">
+                              {c.documents.length} doc{c.documents.length !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {conditions.length === 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs text-[#5a7a80] mb-2">Popular conditions to get started:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {popularConditions.map((pc) => (
+                        <button
+                          key={pc.name}
+                          onClick={() => {
+                            setNewConditionName(pc.name);
+                            setIsNewCondition(true);
+                            setStatus(pc.status as StatusType);
+                          }}
+                          className="px-3 py-1.5 rounded-full text-xs bg-[#f5fafb] border border-[rgba(129,202,214,0.2)] hover:border-[#81CAD6] transition text-[#1a2e32]"
+                        >
+                          {pc.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Info Card */}
+            <div className="mt-6 p-4 bg-[#81CAD6]/5 rounded-xl border border-[#81CAD6]/20 flex items-start gap-3">
+              <Shield className="w-5 h-5 text-[#81CAD6] shrink-0 mt-0.5" />
+              <p className="text-sm text-[#5a7a80]">
+                Select an existing condition to keep your medical history organized and easy to track.
+              </p>
+            </div>
+
+            <button
+              onClick={handleConditionSubmit}
+              className="w-full mt-6 bg-linear-to-r from-[#81CAD6] to-[#6bb8c4] text-white py-3.5 rounded-xl font-medium hover:shadow-lg transition flex items-center justify-center gap-2"
+            >
+              Next: Upload Documents
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-[#5a7a80]">
+            <Shield className="w-3.5 h-3.5" />
+            Your data is secure and private
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================
+  // STEP 2: UPLOAD
+  // ========================
+  if (step === "upload") {
+    return (
+      <div className="min-h-screen bg-[#f5fafb] flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-2xl">
+          {/* Step Indicator */}
+          <div className="flex items-center gap-2 mb-8 justify-center">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#81CAD6] text-white flex items-center justify-center text-sm font-semibold">
+                1
+              </div>
+              <span className="text-sm font-medium text-[#1a2e32]">Condition</span>
+            </div>
+            <div className="w-12 h-0.5 bg-[#81CAD6]"></div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#81CAD6] text-white flex items-center justify-center text-sm font-semibold">
+                2
+              </div>
+              <span className="text-sm font-medium text-[#1a2e32]">Upload</span>
+            </div>
+            <div className="w-12 h-0.5 bg-[#81CAD6]/30"></div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#f5fafb] border-2 border-[#81CAD6]/30 text-[#5a7a80] flex items-center justify-center text-sm font-semibold">
+                3
+              </div>
+              <span className="text-sm text-[#5a7a80]">Review</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-semibold text-[#1a2e32]">Upload Report</h1>
+              <p className="text-[#5a7a80] mt-1">
+                Select the document type and upload your file.
+              </p>
+            </div>
+            <button
+              onClick={goBackToCondition}
+              className="flex items-center gap-1.5 text-sm text-[#5a7a80] hover:text-[#1a2e32] transition"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Change Condition
+            </button>
+          </div>
+
+          {selectedCondition && (
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-[rgba(129,202,214,0.2)] shadow-sm">
+                <span className="text-sm font-medium text-[#1a2e32]">{selectedCondition.name}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(selectedCondition.status)}`}>
+                  {statusLabels[selectedCondition.status as keyof typeof statusLabels] || "Active"}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl border border-[rgba(129,202,214,0.2)] p-8 shadow-sm">
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-[#1a2e32] mb-3">
+                Choose Document Type
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                {typeOptions.map((item) => {
+                  const isSelected = selectedType === item.type;
+                  const Icon = item.icon;
                   return (
-                    <option key={type} value={type}>{type}</option>
+                    <button
+                      key={item.type}
+                      onClick={() => setSelectedType(item.type as ReportType)}
+                      className={`p-4 rounded-xl border-2 text-center transition ${
+                        isSelected
+                          ? "border-[#81CAD6] bg-[#81CAD6]/5 shadow-sm"
+                          : "border-[rgba(129,202,214,0.15)] hover:border-[rgba(129,202,214,0.3)]"
+                      }`}
+                    >
+                      <div
+                        className={`w-12 h-12 rounded-full mx-auto mb-2 flex items-center justify-center ${
+                          isSelected ? "bg-[#81CAD6]/10" : "bg-[#f5fafb]"
+                        }`}
+                      >
+                        <Icon
+                          className="w-6 h-6"
+                          style={{ color: isSelected ? item.color : "#5a7a80" }}
+                        />
+                      </div>
+                      <p className="text-sm font-medium" style={{ color: isSelected ? item.color : "#1a2e32" }}>
+                        {item.label}
+                      </p>
+                      <p className="text-xs text-[#5a7a80] mt-1">{item.desc}</p>
+                    </button>
                   );
                 })}
-              </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Date</label>
-              <DatePicker
-                selected={imagingDate}
-                onChange={function(date: Date | null) { setImagingDate(date); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#DC3E26]"
-                dateFormat="yyyy-MM-dd"
-                placeholderText="Select date"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Body part / area</label>
-              <input
-                type="text"
-                value={imagingBodyPart}
-                onChange={function(e) { setImagingBodyPart(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="Chest"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Hospital</label>
-              <input
-                type="text"
-                value={imagingHospital}
-                onChange={function(e) { setImagingHospital(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="City Hospital"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a2e32] mb-1">Radiologist / Doctor</label>
-              <input
-                type="text"
-                value={imagingDoctor}
-                onChange={function(e) { setImagingDoctor(e.target.value); }}
-                className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg"
-                placeholder="Dr. Mehta"
-              />
-            </div>
-          </div>
 
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-[#1a2e32] mb-1">Finding</label>
-            <textarea
-              value={imagingFinding}
-              onChange={function(e) { setImagingFinding(e.target.value); }}
-              className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg min-h-[80px]"
-              placeholder="Describe the finding..."
-            />
-          </div>
+            {!isLoading && !error && (
+              <div
+                className={`border-2 border-dashed rounded-xl p-12 text-center bg-white transition ${
+                  selectedType
+                    ? "border-[#81CAD6] hover:bg-[#81CAD6]/5 cursor-pointer"
+                    : "border-[rgba(129,202,214,0.25)] opacity-60"
+                }`}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files[0] && selectedType) {
+                    handleFileSelect(e.dataTransfer.files[0]);
+                  }
+                }}
+                onClick={() => {
+                  if (selectedType) {
+                    document.getElementById("fileInput")?.click();
+                  }
+                }}
+              >
+                <div className="w-16 h-16 rounded-full bg-[#81CAD6]/10 flex items-center justify-center mx-auto mb-4">
+                  <Upload className="w-8 h-8 text-[#81CAD6]" />
+                </div>
+                <p className="text-[#1a2e32] font-medium">
+                  Drag & drop your file here
+                </p>
+                <p className="text-[#5a7a80] text-sm mt-1">
+                  PDF, image, or scan
+                </p>
+                <button
+                  className={`mt-4 px-6 py-2 rounded-full text-sm font-medium transition ${
+                    selectedType
+                      ? "bg-[#81CAD6] text-white hover:bg-[#6bb8c4]"
+                      : "bg-[#f5fafb] text-[#5a7a80] cursor-not-allowed"
+                  }`}
+                  disabled={!selectedType}
+                >
+                  Browse Files
+                </button>
+                <input
+                  id="fileInput"
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files?.[0] && selectedType) {
+                      handleFileSelect(e.target.files[0]);
+                    }
+                  }}
+                />
+                {!selectedType && (
+                  <p className="text-xs text-[#DC3E26] mt-3">
+                    Please select a document type first
+                  </p>
+                )}
+              </div>
+            )}
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-[#1a2e32] mb-1">Impression / Conclusion</label>
-            <textarea
-              value={imagingImpression}
-              onChange={function(e) { setImagingImpression(e.target.value); }}
-              className="w-full px-3 py-2 border border-[rgba(129,202,214,0.25)] rounded-lg min-h-[60px]"
-              placeholder="Final impression..."
-            />
-          </div>
+            {isLoading && (
+              <div className="py-16 text-center">
+                <Loader2 className="w-10 h-10 text-[#81CAD6] animate-spin mx-auto mb-4" />
+                <p className="text-[#1a2e32] font-medium">AI is reading your report…</p>
+                <p className="text-[#5a7a80] text-sm mt-1">Extracting fields automatically</p>
+              </div>
+            )}
 
-          <button
-            onClick={handleSave}
-            className="w-full bg-[#DC3E26] text-white py-3 rounded-full font-medium hover:bg-[#c03520] transition"
-          >
-            Save to Timeline
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Link visit prompt
-  if (step === "link" && showLinkPrompt && linkMatch) {
-    // Format the date for display
-    var visitDate = linkMatch.visit.date ? new Date(linkMatch.visit.date) : new Date();
-    var dateStr = visitDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    var doctorName = linkMatch.visit.doctor || 'Unknown Doctor';
-    var title = linkMatch.visit.title || 'Untitled';
-
-    return (
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-xl border border-[rgba(129,202,214,0.25)] p-8 text-center">
-          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mx-auto mb-4">
-            <Check className="w-6 h-6 text-green-600" />
-          </div>
-          <h3 className="text-xl font-medium text-[#1a2e32] mb-2">Saved to your timeline!</h3>
-          
-          <div className="bg-[#f5fafb] rounded-lg p-4 text-left my-6">
-            <p className="text-sm text-[#5a7a80] mb-2">Is this related to an existing visit?</p>
-            <div className="bg-white rounded-lg border border-[rgba(129,202,214,0.25)] p-4">
-              <p className="font-medium text-[#1a2e32]">{title} · {dateStr} · {doctorName}</p>
-              <p className="text-sm text-[#5a7a80]">{linkMatch.reason}</p>
-            </div>
-          </div>
-
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={handleLinkExisting}
-              className="px-6 py-2.5 rounded-full bg-[#81CAD6] text-white font-medium hover:bg-[#6bb8c4] transition"
-            >
-              Yes, link to this visit
-            </button>
-            <button
-              onClick={handleSaveSeparate}
-              className="px-6 py-2.5 rounded-full border border-[rgba(129,202,214,0.25)] text-[#1a2e32] font-medium hover:bg-[#f5fafb] transition"
-            >
-              Save separately
-            </button>
+            {error && !uploadAttempted && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-red-700">Upload Failed</p>
+                    <p className="text-sm text-red-600">{error}</p>
+                    <button
+                      onClick={() => {
+                        setError("");
+                        setUploadAttempted(false);
+                      }}
+                      className="mt-2 text-sm text-red-600 hover:text-red-800 font-medium"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
   }
 
-  // Add another document prompt
-  if (step === "add" && showAddPrompt) {
+  // ========================
+  // STEP 3: REVIEW (AI Success)
+  // ========================
+  if (step === "review" && uploadResult) {
+    const extracted = uploadResult.extracted || {};
     return (
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-xl border border-[rgba(129,202,214,0.25)] p-8 text-center">
-          <h3 className="text-xl font-medium text-[#1a2e32] mb-2">Do you have another document from this visit?</h3>
-          <p className="text-[#5a7a80] mb-6">Add multiple reports from the same visit to keep them together.</p>
+      <div className="min-h-screen bg-[#f5fafb] flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-2xl">
+          <div className="flex items-center gap-2 text-green-600 mb-4">
+            <Check className="w-5 h-5" />
+            <span className="font-medium">Report processed successfully</span>
+          </div>
 
-          <div className="flex flex-wrap gap-3 justify-center">
+          <div className="bg-white rounded-2xl border border-[rgba(129,202,214,0.2)] p-8 shadow-sm">
+            <h3 className="font-semibold text-[#1a2e32] mb-4">Review Document Details</h3>
+
+            <div className="grid md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <p className="text-xs text-[#5a7a80] font-medium">File Name</p>
+                <p className="text-sm text-[#1a2e32]">{uploadResult.file_name || file?.name}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[#5a7a80] font-medium">Type</p>
+                <p className="text-sm text-[#1a2e32]">{selectedType ? typeOptions.find(t => t.type === selectedType)?.label : "Unknown"}</p>
+              </div>
+              {extracted.report_date && (
+                <div>
+                  <p className="text-xs text-[#5a7a80] font-medium">Date</p>
+                  <p className="text-sm text-[#1a2e32]">{extracted.report_date}</p>
+                </div>
+              )}
+              {extracted.doctor_name && (
+                <div>
+                  <p className="text-xs text-[#5a7a80] font-medium">Doctor</p>
+                  <p className="text-sm text-[#1a2e32]">{extracted.doctor_name}</p>
+                </div>
+              )}
+              {extracted.hospital_name && (
+                <div className="md:col-span-2">
+                  <p className="text-xs text-[#5a7a80] font-medium">Hospital</p>
+                  <p className="text-sm text-[#1a2e32]">{extracted.hospital_name}</p>
+                </div>
+              )}
+              {extracted.diagnosis && (
+                <div className="md:col-span-2">
+                  <p className="text-xs text-[#5a7a80] font-medium">Diagnosis</p>
+                  <p className="text-sm text-[#1a2e32]">{extracted.diagnosis}</p>
+                </div>
+              )}
+            </div>
+
             <button
-              onClick={function() { handleAddAnother("lab"); }}
-              className="px-6 py-2.5 rounded-full bg-[#81CAD6] text-white font-medium hover:bg-[#6bb8c4] transition"
+              onClick={() => {
+                if (!selectedCondition) return;
+                const document = {
+                  id: "doc_" + Date.now(),
+                  name: uploadResult.file_name || file?.name || "Untitled",
+                  type: (selectedType === "lab" ? "Lab Report" : selectedType === "prescription" ? "Prescription" : "Imaging") as "Lab Report" | "Prescription" | "Imaging",
+                  fileUrl: uploadResult.file_url || "",
+                  reportId: uploadResult.report_id || "",
+                  uploadedAt: new Date().toISOString(),
+                  reportDate: extracted.report_date || extracted.visit_date || new Date().toISOString().split("T")[0],
+                };
+                addDocumentToCondition(selectedCondition.id, document);
+                setNeedsRefresh(true);
+                resetForm();
+                setStep("condition");
+                setConditions(getConditions());
+                alert("Report saved successfully to " + selectedCondition.name + "!");
+              }}
+              className="w-full mt-4 bg-linear-to-r from-[#81CAD6] to-[#6bb8c4] text-white py-3.5 rounded-xl font-medium hover:shadow-lg transition"
             >
-              + Add Lab Report
+              Save to {selectedCondition?.name}
             </button>
+
             <button
-              onClick={function() { handleAddAnother("prescription"); }}
-              className="px-6 py-2.5 rounded-full bg-[#EDCD44] text-[#3d3000] font-medium hover:bg-[#d4b83d] transition"
+              onClick={() => { setStep("upload"); resetForm(); }}
+              className="w-full mt-3 text-sm text-[#5a7a80] hover:text-[#1a2e32] transition"
             >
-              + Add Prescription
+              Back
             </button>
-            <button
-              onClick={handleDone}
-              className="px-6 py-2.5 rounded-full border border-[rgba(129,202,214,0.25)] text-[#5a7a80] font-medium hover:bg-[#f5fafb] transition"
-            >
-              Done
-            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================
+  // STEP 4: MANUAL ENTRY FALLBACK
+  // ========================
+  if (step === "manual") {
+    return (
+      <div className="min-h-screen bg-[#f5fafb] flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-2xl">
+          {/* Banner */}
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-5 py-3 rounded-2xl mb-6 text-sm flex items-center gap-3">
+            <Shield className="w-5 h-5 text-yellow-600 shrink-0" />
+            <span>AI extraction is temporarily unavailable. You can continue by entering the report details manually.</span>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-[rgba(129,202,214,0.2)] p-8 shadow-sm">
+            <h3 className="text-xl font-semibold text-[#1a2e32] mb-2 flex items-center gap-2">
+              <PenLine className="w-5 h-5 text-[#81CAD6]" />
+              Enter Report Details
+            </h3>
+            <p className="text-sm text-[#5a7a80] mb-6">
+              Fill in the details manually. This will be saved to your timeline.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-[#1a2e32] mb-1">
+                  Report Type
+                </label>
+                <div className="flex gap-3">
+                  {["Lab Report", "Prescription", "Imaging"].map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setManualData({ ...manualData, reportType: type as any })}
+                      className={`px-4 py-2 rounded-full text-sm font-medium border transition ${
+                        manualData.reportType === type
+                          ? "border-[#81CAD6] bg-[#81CAD6]/10 text-[#1a2e32]"
+                          : "border-[rgba(129,202,214,0.2)] text-[#5a7a80] hover:border-[#81CAD6]"
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#1a2e32] mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={manualData.date}
+                    onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-[rgba(129,202,214,0.25)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#81CAD6] text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#1a2e32] mb-1">
+                    Doctor
+                  </label>
+                  <input
+                    type="text"
+                    value={manualData.doctor}
+                    onChange={(e) => setManualData({ ...manualData, doctor: e.target.value })}
+                    placeholder="Dr. Name"
+                    className="w-full px-4 py-2.5 border border-[rgba(129,202,214,0.25)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#81CAD6] text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#1a2e32] mb-1">
+                    Hospital / Lab
+                  </label>
+                  <input
+                    type="text"
+                    value={manualData.hospital}
+                    onChange={(e) => setManualData({ ...manualData, hospital: e.target.value })}
+                    placeholder="Hospital name"
+                    className="w-full px-4 py-2.5 border border-[rgba(129,202,214,0.25)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#81CAD6] text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#1a2e32] mb-1">
+                    Diagnosis / Reason
+                  </label>
+                  <input
+                    type="text"
+                    value={manualData.diagnosis}
+                    onChange={(e) => setManualData({ ...manualData, diagnosis: e.target.value })}
+                    placeholder="e.g. Iron Deficiency Anemia"
+                    className="w-full px-4 py-2.5 border border-[rgba(129,202,214,0.25)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#81CAD6] text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#1a2e32] mb-1">
+                  Notes (optional)
+                </label>
+                <textarea
+                  value={manualData.notes}
+                  onChange={(e) => setManualData({ ...manualData, notes: e.target.value })}
+                  placeholder="Additional notes..."
+                  className="w-full px-4 py-2.5 border border-[rgba(129,202,214,0.25)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#81CAD6] text-sm min-h-20"
+                />
+              </div>
+
+              {selectedCondition && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-[#f5fafb] rounded-xl">
+                  <span className="text-sm text-[#5a7a80]">Saving to:</span>
+                  <span className="text-sm font-medium text-[#1a2e32]">{selectedCondition.name}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(selectedCondition.status)}`}>
+                    {statusLabels[selectedCondition.status as keyof typeof statusLabels] || "Active"}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleManualSave}
+                  className="flex-1 bg-linear-to-r from-[#81CAD6] to-[#6bb8c4] text-white py-3 rounded-xl font-medium hover:shadow-lg transition"
+                >
+                  Save to Timeline
+                </button>
+                <button
+                  onClick={() => { setStep("upload"); resetForm(); }}
+                  className="px-6 py-3 rounded-xl border border-[rgba(129,202,214,0.2)] text-[#5a7a80] hover:bg-[#f5fafb] transition"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
