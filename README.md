@@ -28,6 +28,17 @@
 
 ---
 
+## 🎭 Demo Account
+
+A pre-seeded demo account is available for judges and evaluators. No file uploads needed — all features work immediately.
+
+| | |
+|---|---|
+| **Email** | `demo82674@gmail.com` |
+| **Password** | `demo@123` |
+
+---
+
 ## 📌 The Problem
 
 Every time a patient visits a new doctor, they struggle to answer basic questions — *"when did this start?", "what medicines have you taken?", "do you have old reports?"*
@@ -445,7 +456,7 @@ A pre-seeded demo account is available for judges and evaluators. No file upload
 | | |
 |---|---|
 | **Email** | `demo82674@gmail.com` |
-| **Password** | `Demo@123` |
+| **Password** | `demo@123` |
 
 **Pre-loaded data:**
 - 3 conditions: Iron Deficiency Anemia (Active), Type 2 Diabetes (Recurring), Fatty Liver (Resolved)
