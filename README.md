@@ -348,7 +348,7 @@ Frontend will be available at `http://localhost:3000`
 ### Backend `.env`
 
 ```env
-SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_URL=https:[//your-project.supabase.co](https://qmubwsojrctuttgzhdhv.supabase.co)
 SUPABASE_SERVICE_KEY=your-supabase-service-role-key
 GEMINI_API_KEY=your-google-gemini-api-key
 ```
@@ -366,9 +366,9 @@ GEMINI_API_KEY=your-google-gemini-api-key
 ### Frontend `.env.local`
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=[https://your-project.supabase.co](https://qmubwsojrctuttgzhdhv.supabase.co)
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
 
 | Variable | Description |
