@@ -29,8 +29,8 @@ Built for India's 450 million underserved patients — migrant workers, rural fa
 
 | Role | Name |
 |---|---|
-| 👑 Team Leader | Mahi Singh |
-| 🛠️ Member | Saksham Trivedi |
+| 🛠️ Team Member | Mahi Singh |
+| 🛠️ Team Member | Saksham Trivedi |
 
 </div>
 
@@ -583,7 +583,7 @@ MIT — see [LICENSE](LICENSE) for details.
 
 Built with ❤️ for **BuildForGood 2026 — SWASTHYA**
 
-*Mahi Singh (Team Leader) · Saksham Trivedi*
+*Mahi Singh · Saksham Trivedi*
 
 **JeevanTrack** — *Your health, remembered.*
 
