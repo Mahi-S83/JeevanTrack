@@ -17,7 +17,7 @@
 
 ---
 
-### 👥 Team Code Blooded — InnovateZ 2026
+### 👥 Team Code Blooded 
 
 | Role | Name |
 |---|---|
@@ -585,7 +585,7 @@ MIT — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-Built with ❤️ by **Team Code Blooded** for InnovateZ 2026
+Built with ❤️ by **Team Code Blooded** 
 
 *Mahi Singh (Team Leader) · Saksham Trivedi*
 
