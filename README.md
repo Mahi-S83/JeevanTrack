@@ -17,7 +17,15 @@
 
 ---
 
-### 👥 Team Code Blooded 
+### 🏆 BuildForGood 2026 — SWASTHYA Track
+
+> *Health, Wellness & Care Access — bring healthcare closer in distance, cost and language*
+
+Built for India's 450 million underserved patients — migrant workers, rural families, and anyone whose health history lives in a WhatsApp folder.
+
+---
+
+### 👥 Team Code Blooded
 
 | Role | Name |
 |---|---|
@@ -39,13 +47,33 @@ A pre-seeded demo account is available for judges and evaluators. No file upload
 
 ---
 
-## 📌 The Problem
+## 📌 The Problem — भारत के लिए बनाओ
 
-Every time a patient visits a new doctor, they struggle to answer basic questions — *"when did this start?", "what medicines have you taken?", "do you have old reports?"*
+India has 70,000+ private hospitals and over a billion patients — yet most people's medical history exists as a scattered mess of WhatsApp forwards, physical folders, and memory.
 
-Medical history lives scattered across WhatsApp forwards, physical folders, hospital portals, and memory. Tools like ABHA or Practo solve *storage* — they file documents. **None of them solve the understanding problem.**
+This problem is especially acute for:
+- **Migrant and mobile workers** who change cities and lose continuity of care
+- **Rural patients** who travel long distances to see specialists and can't recall their history
+- **Families managing elderly parents** across multiple hospitals and doctors
+- **Anyone visiting a new doctor** who asks "do you have your old reports?" — and the answer is no
 
-JeevanTrack fills the temporal reasoning gap: *"your Vitamin D has been deficient in 3 out of 4 reports over 2 years"* or *"your blood sugar has been trending upward since 2022."*
+Tools like ABHA or Practo solve *storage* — they file documents. **None of them solve the understanding problem.**
+
+JeevanTrack fills the temporal reasoning gap that no existing tool addresses: *"your Vitamin D has been deficient in 3 out of 4 reports over 2 years"* or *"your blood sugar has been trending upward since 2022."*
+
+> **SWASTHYA alignment:** JeevanTrack directly addresses health documentation for mobile workers, rural & remote healthcare access, and medicine availability awareness — three of the four SWASTHYA focus areas.
+
+---
+
+## 🌍 Social Impact
+
+| Who benefits | How JeevanTrack helps |
+|---|---|
+| **Migrant workers** | Single health record that travels with them — no more starting from scratch with every new city doctor |
+| **Rural patients** | One-click Doctor Brief means a specialist gets full context in 30 seconds, not 30 minutes |
+| **Elderly patients** | Family members can manage and share health records without the patient needing a smartphone |
+| **Low-literacy users** | AI extracts data automatically — no manual entry, no forms to fill |
+| **Uninsured patients** | Better health tracking = earlier detection = lower cost of treatment |
 
 ---
 
@@ -109,7 +137,7 @@ Track symptoms with severity and relief data, linked medications, and freeform n
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              JeevanTrack Architecture                       │
+│                          JeevanTrack Architecture                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -348,7 +376,7 @@ Frontend will be available at `http://localhost:3000`
 ### Backend `.env`
 
 ```env
-SUPABASE_URL=https:[//your-project.supabase.co](https://qmubwsojrctuttgzhdhv.supabase.co)
+SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=your-supabase-service-role-key
 GEMINI_API_KEY=your-google-gemini-api-key
 ```
@@ -366,9 +394,9 @@ GEMINI_API_KEY=your-google-gemini-api-key
 ### Frontend `.env.local`
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=[https://your-project.supabase.co](https://qmubwsojrctuttgzhdhv.supabase.co)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 | Variable | Description |
@@ -398,14 +426,14 @@ httpx            # Async HTTP client
 
 ```json
 {
-  "next": "^14.2.35",              // App Router, SSR
+  "next": "^14.2.35",
   "react": "^18.3.1",
-  "@supabase/supabase-js": "^2.108.2",  // Auth + DB client
-  "recharts": "^3.8.1",            // Health trend charts
-  "lucide-react": "^1.21.0",       // Icon system
-  "framer-motion": "^12.40.0",     // Animations
-  "react-datepicker": "^9.1.0",    // Date input in journal
-  "tailwindcss": "^4",             // Utility-first CSS
+  "@supabase/supabase-js": "^2.108.2",
+  "recharts": "^3.8.1",
+  "lucide-react": "^1.21.0",
+  "framer-motion": "^12.40.0",
+  "react-datepicker": "^9.1.0",
+  "tailwindcss": "^4",
   "typescript": "^5"
 }
 ```
@@ -414,8 +442,6 @@ httpx            # Async HTTP client
 
 ## 🗄️ Database Schema
 
-JeevanTrack uses Supabase PostgreSQL. The main tables are:
-
 ```sql
 -- User reports with extracted data stored as JSONB
 reports (
@@ -423,8 +449,7 @@ reports (
   user_id     UUID REFERENCES auth.users,
   file_name   TEXT,
   uploaded_at TIMESTAMP,
-  extracted   JSONB    -- { report_date, doctor, hospital, diagnosis,
-                       --   medicines[], lab_values{} }
+  extracted   JSONB
 )
 
 -- Timeline entries per condition
@@ -451,8 +476,6 @@ shares (
 
 ## 🎭 Demo Account
 
-A pre-seeded demo account is available for judges and evaluators. No file uploads needed — all features work immediately.
-
 | | |
 |---|---|
 | **Email** | `demo82674@gmail.com` |
@@ -461,28 +484,8 @@ A pre-seeded demo account is available for judges and evaluators. No file upload
 **Pre-loaded data:**
 - 3 conditions: Iron Deficiency Anemia (Active), Type 2 Diabetes (Recurring), Fatty Liver (Resolved)
 - 9 documents spread across conditions
-- 3 health journal entries (fatigue → iron supplements → follow-up note)
+- 3 health journal entries
 - Full health trends for Hemoglobin, Iron, Vitamin D, Cholesterol, Sodium, Blood Sugar
-
----
-
-## 🧪 Sample / Mock Data
-
-| Data | Type | Description |
-|---|---|---|
-| `fakeReports.pdf` | Mock PDF | Sample lab report with CBC, lipid profile, and metabolic panel |
-| Demo conditions | localStorage seed | Iron Deficiency Anemia, Type 2 Diabetes, Fatty Liver |
-| Demo journal | localStorage seed | 3 entries: fatigue (moderate), energy levels (mild), follow-up note |
-| Test PDF | Real document | Sterling Accuris Pathology Laboratory 19-page report (used for extraction testing) |
-
-Demo data is seeded automatically when the demo email logs in. All localStorage keys used:
-
-| Key | Purpose |
-|---|---|
-| `jeevantrack_conditions` | Condition list with metadata |
-| `jeevantrack_timeline_cache` | Cached timeline data |
-| `jeevantrack_needs_refresh` | Cache invalidation flag |
-| `jeevantrack_journal` | Health journal entries |
 
 ---
 
@@ -498,8 +501,7 @@ Demo data is seeded automatically when the demo email logs in. All localStorage 
 | `POST` | `/share` | Generate expiring share token |
 | `GET` | `/shared/{token}` | Public view (no auth required) |
 | `DELETE` | `/share/{token}` | Revoke a share link |
-
-All endpoints except `/shared/{token}` require a Supabase JWT in the `Authorization: Bearer <token>` header.
+| `DELETE` | `/reports/{id}` | Delete a report |
 
 ---
 
@@ -516,36 +518,29 @@ All endpoints except `/shared/{token}` require a Supabase JWT in the `Authorizat
 | ✅ Health trend charts | Normal range reference lines |
 | ✅ AI health chat | Answers grounded in personal data |
 | ✅ Doctor Brief | API + localStorage fallback |
-| ✅ Secure share links with QR code | Expiring tokens via `secrets` module |
+| ✅ Secure share links with QR code | Expiring tokens |
 | ✅ Health Journal | Symptom logging with severity + relief |
 | ✅ Demo account | Pre-seeded data, all features accessible |
 
-### Partial
+### Partial / Roadmap
 
 | Feature | Status |
 |---|---|
 | ⚠️ PDF preview | File URL stored; in-browser viewer not implemented |
 | ⚠️ Voice journal | UI ready; voice recording not implemented |
-| ⚠️ Advanced trend analysis | Basic tracking done; multi-condition correlation pending |
-
-### Not Built (Post-Hackathon Roadmap)
-
-| Feature |
-|---|
-| ❌ Family health profiles |
-| ❌ Row Level Security (RLS) enabled |
-| ❌ Push notifications for abnormal values |
-| ❌ PDF download of Doctor Brief |
+| ❌ Family health profiles | Post-hackathon |
+| ❌ RLS enabled | Post-hackathon |
+| ❌ Push notifications | Post-hackathon |
+| ❌ Regional language support (Hindi/Tamil/Telugu) | High priority for SWASTHYA alignment |
 
 ---
 
 ## ⚠️ Known Limitations
 
-1. **Gemini API Quota** — Free tier allows ~20 requests/day. If exhausted, upload falls back to manual entry (no data loss, just no AI extraction).
-2. **Render Cold Start** — Free tier backend may sleep after 15 minutes of inactivity. First request after sleep takes 30–60 seconds.
-3. **Manual Entry ≠ Trends** — Manual fallback entry does not extract lab values; only AI-extracted reports populate Health Trends.
-4. **Share Links** — Currently share all reports, not user-selected reports.
-5. **Gemini Accuracy** — Extraction accuracy may vary with handwritten or very low-quality scanned reports.
+1. **Gemini API Quota** — Free tier allows ~20 requests/day. If exhausted, upload falls back to manual entry.
+2. **Render Cold Start** — Free tier backend may sleep after 15 minutes. First request takes 30–60 seconds.
+3. **Share Links** — Currently share all reports, not user-selected reports.
+4. **Gemini Accuracy** — Extraction accuracy may vary with handwritten or very low-quality scanned reports.
 
 ---
 
@@ -555,25 +550,26 @@ All endpoints except `/shared/{token}` require a Supabase JWT in the `Authorizat
 |---|---|---|
 | Frontend | Vercel | https://jeevan-track.vercel.app |
 | Backend | Render | https://jeevantrack-backend.onrender.com |
-| Database | Supabase | https://qmubwsojrctuttgzhdhv.supabase.co |
+| Database | Supabase | Managed cloud |
 
 ---
 
-## 🔮 Roadmap
+## 🔮 Roadmap — SWASTHYA Vision
 
 **Short-term**
-- Improve OCR accuracy across diverse report formats
-- Expand biomarker extraction coverage
-- Strengthen duplicate report detection
+- Regional language support (Hindi, Tamil, Telugu, Bengali) — critical for rural accessibility
+- Offline mode for low-connectivity areas
+- WhatsApp integration for report sharing (most common medium in rural India)
+- ABHA (Ayushman Bharat Health Account) integration
 
 **Medium-term**
-- Doctor and caregiver access modules
-- Automated medication management
-- Smart health reminders and follow-ups
-- Personalized health risk scoring
+- Doctor and ASHA worker access modules
+- Automated medication reminders via SMS
+- Health risk scoring for preventive care
+- Integration with Jan Aushadhi (generic medicines) for cost-aware prescriptions
 
 **Long-term vision**
-JeevanTrack aims to become a comprehensive lifelong health intelligence platform — transforming fragmented medical records into a continuously evolving digital health companion that supports preventive healthcare, clinical decision-making, and long-term patient wellness.
+JeevanTrack aims to become India's health memory layer — giving every Indian, regardless of literacy, location, or income, the ability to understand their own health history and walk into any doctor's office with their complete medical story. Built for Bharat, not just urban India.
 
 ---
 
@@ -585,10 +581,12 @@ MIT — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-Built with ❤️ by **Team Code Blooded** 
+Built with ❤️ for **BuildForGood 2026 — SWASTHYA**
 
 *Mahi Singh (Team Leader) · Saksham Trivedi*
 
 **JeevanTrack** — *Your health, remembered.*
+
+*भारत के लिए बनाओ। असल समस्याओं के लिए बनाओ।*
 
 </div>
