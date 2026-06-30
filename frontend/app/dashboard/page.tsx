@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { loadHealthData } from '@/lib/dataService';
 import { 
   Search, FolderOpen, FileText, Download, ExternalLink, 
   ChevronDown, ChevronUp, Trash2, Calendar, User, Building2, 
@@ -14,11 +15,13 @@ import {
   getNeedsRefresh,
   clearNeedsRefresh,
   setNeedsRefresh,
+
   removeDocumentFromCondition,
   type Condition,
   type Document,
 } from "@/lib/conditionStorage";
 import { isDemoUser, getDemoConditions, getDemoJournal } from "@/lib/demoMode";
+
 
 // Color mapping for document types
 const typeColors = {
@@ -47,13 +50,14 @@ const statusLabels = {
 };
 
 export default function DashboardPage() {
-  const [conditions, setConditions] = useState<Condition[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+ const [conditions, setConditions] = useState<Condition[]>([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState("");
+const [search, setSearch] = useState("");
+const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+const [deleting, setDeleting] = useState<string | null>(null);
+const [isDemo, setIsDemo] = useState(false); // ← ADD THIS LINE
+const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     // Get user email
@@ -63,111 +67,31 @@ export default function DashboardPage() {
   }, []);
 
   const loadTimeline = async () => {
-    try {
-      setLoading(true);
-      setError("");
+  try {
+    setLoading(true);
+    setError("");
 
-      // Check if we need to refresh
-      const needsRefresh = getNeedsRefresh();
-
-      if (!needsRefresh) {
-        const cached = getCache();
-        if (cached && cached.conditions.length > 0) {
-          setConditions(cached.conditions);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Check if demo user
-      if (isDemoUser(userEmail)) {
-        const demoConditions = getDemoConditions();
-        setConditions(demoConditions);
-        saveCache(demoConditions);
-        clearNeedsRefresh();
-        setLoading(false);
-        return;
-      }
-
-      // Fetch from backend
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      if (!token) {
-        setError("Not authenticated. Please log in again.");
-        setLoading(false);
-        return;
-      }
-
-      const response = await fetch("https://jeevantrack-backend.onrender.com/timeline", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const reports = data.timeline || [];
-
-      // Merge with localStorage conditions
-      const storedConditions = getConditions();
-      
-      if (storedConditions.length === 0 && reports.length === 0) {
-        // If no data, show demo data as fallback
-        const demoConditions = getDemoConditions();
-        setConditions(demoConditions);
-        saveCache(demoConditions);
-        clearNeedsRefresh();
-        setLoading(false);
-        return;
-      }
-
-      // Merge logic here (same as before)
-      if (storedConditions.length === 0) {
-        const uncategorized: Condition = {
-          id: "uncategorized",
-          name: "Uncategorized",
-          status: "active",
-          documents: reports.map((report: any) => ({
-            id: report.id || "doc_" + Math.random(),
-            name: report.file_name || "Untitled Report",
-            type: report.report_type === "prescription" ? "Prescription" : 
-                   report.report_type === "blood_test" ? "Lab Report" : "Other",
-            fileUrl: report.file_url || "",
-            reportId: report.id || "",
-            uploadedAt: report.uploaded_at || new Date().toISOString(),
-            reportDate: report.date || report.uploaded_at?.split("T")[0] || "",
-          })),
-        };
-        saveConditions([uncategorized]);
-        setConditions([uncategorized]);
-        saveCache([uncategorized]);
-        clearNeedsRefresh();
-        setLoading(false);
-        return;
-      }
-
-      setConditions(storedConditions);
-      saveCache(storedConditions);
-      clearNeedsRefresh();
-
-    } catch (err: any) {
-      console.error("Failed to load timeline:", err);
-      setError(err.message || "Failed to load timeline.");
-      
-      // Fallback to demo data if available
-      const demoConditions = getDemoConditions();
-      setConditions(demoConditions);
-      saveCache(demoConditions);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+    // ── Use unified data loader ──
+    const conditions = await loadHealthData();
+    setConditions(conditions);
+    saveCache(conditions);
+    
+    // Update demo status
+    const email = localStorage.getItem('user_email');
+    setIsDemo(isDemoUser(email));
+    
+  } catch (err: any) {
+    console.error('Failed to load timeline:', err);
+    setError(err.message || 'Failed to load timeline.');
+    
+    // Fallback to demo data
+    const demoData = getDemoConditions();
+    setConditions(demoData);
+    saveCache(demoData);
+  } finally {
+    setLoading(false);
+  }
+};
   const handleDeleteDocument = async (conditionId: string, documentId: string) => {
     if (!confirm("Delete this document?")) return;
     

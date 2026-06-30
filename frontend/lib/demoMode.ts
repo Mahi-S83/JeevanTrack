@@ -8,6 +8,18 @@ export function isDemoUser(email: string | null | undefined): boolean {
 }
 
 export function getDemoConditions() {
+  // Get current date for realistic timestamps
+  const now = new Date();
+  const threeMonthsAgo = new Date(now);
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  const twoMonthsAgo = new Date(now);
+  twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+  const oneMonthAgo = new Date(now);
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+  const formatDate = (d: Date) => d.toISOString().split('T')[0];
+  const formatISO = (d: Date) => d.toISOString();
+
   return [
     {
       id: "cond_demo_1",
@@ -16,21 +28,32 @@ export function getDemoConditions() {
       documents: [
         {
           id: "doc_demo_1",
-          name: "CBC Lab Report - March 2025",
+          name: "CBC Lab Report",
           type: "Lab Report" as const,
           fileUrl: "",
           reportId: "demo_1",
-          uploadedAt: "2025-03-15T10:00:00Z",
-          reportDate: "2025-03-15"
+          uploadedAt: formatISO(threeMonthsAgo),
+          reportDate: formatDate(threeMonthsAgo),
+          extractedData: {
+            lab_values: {
+              'Hemoglobin': { value: '12.5', unit: 'g/dL', normal_range: '12-17' },
+              'Ferritin': { value: '45', unit: 'ng/mL', normal_range: '12-150' }
+            }
+          }
         },
         {
           id: "doc_demo_2",
-          name: "Ferritin Test - March 2025",
+          name: "Ferritin Test",
           type: "Lab Report" as const,
           fileUrl: "",
           reportId: "demo_2",
-          uploadedAt: "2025-03-15T10:00:00Z",
-          reportDate: "2025-03-15"
+          uploadedAt: formatISO(twoMonthsAgo),
+          reportDate: formatDate(twoMonthsAgo),
+          extractedData: {
+            lab_values: {
+              'Ferritin': { value: '55', unit: 'ng/mL', normal_range: '12-150' }
+            }
+          }
         },
         {
           id: "doc_demo_3",
@@ -38,8 +61,9 @@ export function getDemoConditions() {
           type: "Prescription" as const,
           fileUrl: "",
           reportId: "demo_3",
-          uploadedAt: "2025-03-16T10:00:00Z",
-          reportDate: "2025-03-16"
+          uploadedAt: formatISO(twoMonthsAgo),
+          reportDate: formatDate(twoMonthsAgo),
+          extractedData: {}
         }
       ]
     },
@@ -50,21 +74,32 @@ export function getDemoConditions() {
       documents: [
         {
           id: "doc_demo_4",
-          name: "HbA1c Report - February 2025",
+          name: "HbA1c Report",
           type: "Lab Report" as const,
           fileUrl: "",
           reportId: "demo_4",
-          uploadedAt: "2025-02-10T10:00:00Z",
-          reportDate: "2025-02-10"
+          uploadedAt: formatISO(twoMonthsAgo),
+          reportDate: formatDate(twoMonthsAgo),
+          extractedData: {
+            lab_values: {
+              'HbA1c': { value: '6.8', unit: '%', normal_range: '<5.7' },
+              'Fasting Blood Sugar': { value: '120', unit: 'mg/dL', normal_range: '70-100' }
+            }
+          }
         },
         {
           id: "doc_demo_5",
-          name: "Fasting Blood Sugar - February 2025",
+          name: "Fasting Blood Sugar",
           type: "Lab Report" as const,
           fileUrl: "",
           reportId: "demo_5",
-          uploadedAt: "2025-02-10T10:00:00Z",
-          reportDate: "2025-02-10"
+          uploadedAt: formatISO(oneMonthAgo),
+          reportDate: formatDate(oneMonthAgo),
+          extractedData: {
+            lab_values: {
+              'Fasting Blood Sugar': { value: '115', unit: 'mg/dL', normal_range: '70-100' }
+            }
+          }
         },
         {
           id: "doc_demo_6",
@@ -72,42 +107,40 @@ export function getDemoConditions() {
           type: "Prescription" as const,
           fileUrl: "",
           reportId: "demo_6",
-          uploadedAt: "2025-02-12T10:00:00Z",
-          reportDate: "2025-02-12"
+          uploadedAt: formatISO(twoMonthsAgo),
+          reportDate: formatDate(twoMonthsAgo),
+          extractedData: {}
         }
       ]
     },
     {
       id: "cond_demo_3",
-      name: "Fatty Liver",
-      status: "resolved" as const,
+      name: "Hypertension",
+      status: "active" as const,
       documents: [
         {
           id: "doc_demo_7",
-          name: "Ultrasound Report - January 2025",
-          type: "Imaging" as const,
+          name: "BP Reading",
+          type: "Lab Report" as const,
           fileUrl: "",
           reportId: "demo_7",
-          uploadedAt: "2025-01-20T10:00:00Z",
-          reportDate: "2025-01-20"
+          uploadedAt: formatISO(oneMonthAgo),
+          reportDate: formatDate(oneMonthAgo),
+          extractedData: {
+            lab_values: {
+              'Blood Pressure': { value: '135/85', unit: 'mmHg', normal_range: '<120/80' }
+            }
+          }
         },
         {
           id: "doc_demo_8",
-          name: "Liver Function Test - January 2025",
-          type: "Lab Report" as const,
-          fileUrl: "",
-          reportId: "demo_8",
-          uploadedAt: "2025-01-20T10:00:00Z",
-          reportDate: "2025-01-20"
-        },
-        {
-          id: "doc_demo_9",
-          name: "Gastroenterology Prescription",
+          name: "Amlodipine Prescription",
           type: "Prescription" as const,
           fileUrl: "",
-          reportId: "demo_9",
-          uploadedAt: "2025-01-22T10:00:00Z",
-          reportDate: "2025-01-22"
+          reportId: "demo_8",
+          uploadedAt: formatISO(oneMonthAgo),
+          reportDate: formatDate(oneMonthAgo),
+          extractedData: {}
         }
       ]
     }

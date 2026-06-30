@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { saveDocument } from '@/lib/dataService';
 import {
   FlaskConical,
   Pill,
@@ -182,7 +183,7 @@ export default function UploadPage() {
   };
 
   // Handle manual save
- const handleManualSave = () => {
+ const handleManualSave = async () => {
   if (!selectedCondition) return;
 
   const document = {
@@ -193,36 +194,18 @@ export default function UploadPage() {
     reportId: "manual_" + Date.now(),
     uploadedAt: new Date().toISOString(),
     reportDate: manualData.date || new Date().toISOString().split("T")[0],
-    // Add a lab value so trends can show something
-    extractedData: {
-      lab_values: manualData.diagnosis ? {
+    extractedData: manualData.diagnosis ? {
+      lab_values: {
         "Diagnosis": {
           value: manualData.diagnosis,
           unit: "",
           normal_range: ""
         }
-      } : {}
-    }
+      }
+    } : {}
   };
 
-  addDocumentToCondition(selectedCondition.id, document);
-  setNeedsRefresh(true);
-
-  // Also save to a separate trends store
-  if (manualData.diagnosis) {
-    const trendEntry = {
-      date: manualData.date || new Date().toISOString().split("T")[0],
-      test_name: "Diagnosis",
-      value: 1,
-      unit: "",
-      normal_range: ""
-    };
-    // Store in localStorage for trends
-    const existingTrends = JSON.parse(localStorage.getItem('jeevantrack_trends') || '[]');
-    existingTrends.push(trendEntry);
-    localStorage.setItem('jeevantrack_trends', JSON.stringify(existingTrends));
-  }
-
+  await saveDocument(selectedCondition.id, document);
   resetForm();
   setStep("condition");
   setConditions(getConditions());
@@ -720,24 +703,25 @@ export default function UploadPage() {
             </div>
 
             <button
-              onClick={() => {
-                if (!selectedCondition) return;
-                const document = {
-                  id: "doc_" + Date.now(),
-                  name: uploadResult.file_name || file?.name || "Untitled",
-                  type: (selectedType === "lab" ? "Lab Report" : selectedType === "prescription" ? "Prescription" : "Imaging") as "Lab Report" | "Prescription" | "Imaging",
-                  fileUrl: uploadResult.file_url || "",
-                  reportId: uploadResult.report_id || "",
-                  uploadedAt: new Date().toISOString(),
-                  reportDate: extracted.report_date || extracted.visit_date || new Date().toISOString().split("T")[0],
-                };
-                addDocumentToCondition(selectedCondition.id, document);
-                setNeedsRefresh(true);
-                resetForm();
-                setStep("condition");
-                setConditions(getConditions());
-                alert("Report saved successfully to " + selectedCondition.name + "!");
-              }}
+              onClick={async () => {
+  if (!selectedCondition) return;
+  const document = {
+    id: "doc_" + Date.now(),
+    name: uploadResult.file_name || file?.name || "Untitled",
+    type: (selectedType === "lab" ? "Lab Report" : selectedType === "prescription" ? "Prescription" : "Imaging") as "Lab Report" | "Prescription" | "Imaging",
+    fileUrl: uploadResult.file_url || "",
+    reportId: uploadResult.report_id || "",
+    uploadedAt: new Date().toISOString(),
+    reportDate: extracted.report_date || extracted.visit_date || new Date().toISOString().split("T")[0],
+    extractedData: extracted || {},
+  };
+  
+  await saveDocument(selectedCondition.id, document);
+  resetForm();
+  setStep("condition");
+  setConditions(getConditions());
+  alert("Report saved successfully to " + selectedCondition.name + "!");
+}}
               className="w-full mt-4 bg-linear-to-r from-[#81CAD6] to-[#6bb8c4] text-white py-3.5 rounded-xl font-medium hover:shadow-lg transition"
             >
               Save to {selectedCondition?.name}

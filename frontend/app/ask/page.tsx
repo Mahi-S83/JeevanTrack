@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { isDemoUser } from "@/lib/demoMode";
+import { loadHealthData } from '@/lib/dataService';
 
 type Message = {
   id: string;
@@ -77,22 +78,64 @@ export default function AskPage() {
   };
 
   // Fallback: Answer from stored data without Gemini
-  const getFallbackAnswer = (question: string): string => {
-    const lower = question.toLowerCase();
+  const getFallbackAnswer = async (question: string): Promise<string> => {
+  const lower = question.toLowerCase();
+  
+  try {
+    // ── Load ALL data ──
+    const conditions = await loadHealthData();
+    const allDocs = conditions.flatMap(c => c.documents);
     
-    // Check each Q&A pair
-    for (const pair of demoQA) {
-      for (const keyword of pair.keywords) {
-        if (lower.includes(keyword)) {
-          return pair.answer;
-        }
+    // ── Conditions ──
+    if (lower.includes('condition') || lower.includes('have') || lower.includes('diagnosis')) {
+      if (conditions.length === 0) {
+        return "You haven't added any conditions yet. Upload a report to start tracking your health.";
       }
+      const conditionList = conditions.map(c => `• ${c.name} (${c.status})`).join('\n');
+      const docCount = allDocs.length;
+      return `You have ${conditions.length} condition(s):\n\n${conditionList}\n\nTotal documents: ${docCount}`;
     }
     
-    // Default fallback
-    return "I couldn't find specific information about that in your records. Here are some things I can help with:\n• Your conditions\n• Your medications\n• Lab reports and results\n• Doctor follow-ups\n• Symptom history\n\nTry asking about one of these topics!";
-  };
-
+    // ── Medications ──
+    if (lower.includes('medication') || lower.includes('medicine') || lower.includes('prescription')) {
+      const prescriptions = allDocs.filter(d => d.type === 'Prescription');
+      if (prescriptions.length === 0) {
+        return "No medications found in your records. Upload prescriptions to track them.";
+      }
+      const meds = prescriptions.map(d => `• ${d.name} (${d.reportDate || 'No date'})`).join('\n');
+      return `Current medications:\n\n${meds}`;
+    }
+    
+    // ── Lab Results ──
+    if (lower.includes('lab') || lower.includes('test') || lower.includes('result') || lower.includes('report')) {
+      const labs = allDocs.filter(d => d.type === 'Lab Report');
+      if (labs.length === 0) {
+        return "No lab reports found in your records. Upload lab reports to see results.";
+      }
+      const labSummary = labs.map(d => `• ${d.name} (${d.reportDate || 'No date'})`).join('\n');
+      return `Recent lab reports:\n\n${labSummary}`;
+    }
+    
+    // ── Summary ──
+    if (lower.includes('summary') || lower.includes('overview')) {
+      const totalDocs = allDocs.length;
+      const conditionNames = conditions.map(c => c.name).join(', ');
+      const activeCount = conditions.filter(c => c.status === 'active').length;
+      const recentDate = allDocs.length > 0 ? allDocs.reduce((latest, d) => 
+        d.reportDate > latest.reportDate ? d : latest
+      ).reportDate : 'None';
+      
+      return `Your health summary:\n\n• ${conditions.length} conditions: ${conditionNames || 'None'}\n• ${activeCount} active condition(s)\n• ${totalDocs} total documents\n• Most recent: ${recentDate}`;
+    }
+    
+    // ── Default ──
+    return `I can help you with information about your health data. Try asking:\n\n• "What conditions do I have?"\n• "What medications am I taking?"\n• "Show my lab results"\n• "Give me a summary"\n• "What's my most recent report?"`;
+    
+  } catch (err) {
+    console.error('Fallback answer generation failed:', err);
+    return "I'm having trouble accessing your data. Please try again or check your connection.";
+  }
+};
   const handleSend = async () => {
     if (!input.trim()) return;
 
@@ -151,7 +194,7 @@ export default function AskPage() {
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
         // If API fails, use fallback
-        const fallbackAnswer = getFallbackAnswer(input.trim());
+        const fallbackAnswer = await getFallbackAnswer(input.trim());
         const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
           text: fallbackAnswer + "\n\n(This answer was generated from your stored health data. AI service is temporarily unavailable.)",
@@ -167,7 +210,7 @@ export default function AskPage() {
       setError(err.message || "Failed to get response. Please try again.");
       
       // Show fallback even on error
-      const fallbackAnswer = getFallbackAnswer(input.trim());
+      const fallbackAnswer = await getFallbackAnswer(input.trim()); // ✅ With await
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         text: fallbackAnswer + "\n\n(Using offline mode. AI service is currently unavailable.)",

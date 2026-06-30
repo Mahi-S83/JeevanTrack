@@ -1,4 +1,5 @@
 // lib/conditionStorage.ts
+// Simple localStorage wrapper - NO business logic
 
 export type Document = {
   id: string;
@@ -8,6 +9,7 @@ export type Document = {
   reportId: string;
   uploadedAt: string;
   reportDate: string;
+  extractedData?: any;
 };
 
 export type Condition = {
@@ -17,133 +19,87 @@ export type Condition = {
   documents: Document[];
 };
 
-export type TimelineCache = {
-  conditions: Condition[];
-  lastUpdated: string;
-};
+// ─── PRIVATE: Read/Write localStorage ────────────────────────
 
-// Get all conditions from localStorage
-export function getConditions(): Condition[] {
+function getData(): Condition[] {
   if (typeof window === "undefined") return [];
   try {
-    const data = localStorage.getItem("jeevantrack_conditions");
-    return data ? JSON.parse(data) : [];
+    const raw = localStorage.getItem('jeevantrack_conditions');
+    return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-// Save conditions to localStorage
-export function saveConditions(conditions: Condition[]): void {
+function setData(conditions: Condition[]): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem("jeevantrack_conditions", JSON.stringify(conditions));
+  localStorage.setItem('jeevantrack_conditions', JSON.stringify(conditions));
 }
 
-// Get a single condition by ID
+// ─── PUBLIC API ──────────────────────────────────────────────
+
+export function getConditions(): Condition[] {
+  return getData();
+}
+
+export function saveConditions(conditions: Condition[]): void {
+  setData(conditions);
+}
+
+export function getCache(): { conditions: Condition[] } | null {
+  const data = getData();
+  return data.length > 0 ? { conditions: data } : null;
+}
+
+export function saveCache(conditions: Condition[]): void {
+  setData(conditions);
+}
+
+export function getNeedsRefresh(): boolean {
+  if (typeof window === "undefined") return true;
+  return localStorage.getItem('jeevantrack_needs_refresh') !== 'false';
+}
+
+export function setNeedsRefresh(value: boolean): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem('jeevantrack_needs_refresh', String(value));
+}
+
+export function clearNeedsRefresh(): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem('jeevantrack_needs_refresh', 'false');
+}
+
 export function getConditionById(id: string): Condition | null {
-  const conditions = getConditions();
+  const conditions = getData();
   return conditions.find((c) => c.id === id) || null;
 }
 
-// Add or update a condition
 export function upsertCondition(condition: Condition): void {
-  const conditions = getConditions();
+  const conditions = getData();
   const index = conditions.findIndex((c) => c.id === condition.id);
   if (index >= 0) {
     conditions[index] = condition;
   } else {
     conditions.push(condition);
   }
-  saveConditions(conditions);
-  setNeedsRefresh(true);
+  setData(conditions);
 }
 
-// Delete a condition (only if it has no documents)
-export function deleteConditionIfEmpty(id: string): void {
-  const conditions = getConditions();
-  const condition = conditions.find((c) => c.id === id);
-  if (condition && condition.documents.length === 0) {
-    const filtered = conditions.filter((c) => c.id !== id);
-    saveConditions(filtered);
-    setNeedsRefresh(true);
-  }
-}
-
-// Add a document to a condition
 export function addDocumentToCondition(conditionId: string, document: Document): void {
-  const conditions = getConditions();
+  const conditions = getData();
   const condition = conditions.find((c) => c.id === conditionId);
   if (condition) {
     condition.documents.push(document);
-    saveConditions(conditions);
-    setNeedsRefresh(true);
+    setData(conditions);
   }
 }
 
-// Remove a document from a condition
 export function removeDocumentFromCondition(conditionId: string, documentId: string): void {
-  const conditions = getConditions();
+  const conditions = getData();
   const condition = conditions.find((c) => c.id === conditionId);
   if (condition) {
     condition.documents = condition.documents.filter((d) => d.id !== documentId);
-    saveConditions(conditions);
-    setNeedsRefresh(true);
-    // If condition has no documents left, delete it
-    if (condition.documents.length === 0) {
-      deleteConditionIfEmpty(conditionId);
-    }
+    setData(conditions);
   }
-}
-
-// Get or create "Uncategorized" condition
-export function getOrCreateUncategorized(): Condition {
-  const conditions = getConditions();
-  let uncategorized = conditions.find((c) => c.name === "Uncategorized");
-  if (!uncategorized) {
-    uncategorized = {
-      id: "uncategorized",
-      name: "Uncategorized",
-      status: "active",
-      documents: [],
-    };
-    conditions.push(uncategorized);
-    saveConditions(conditions);
-  }
-  return uncategorized;
-}
-
-// --- Cache functions ---
-
-export function getCache(): TimelineCache | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const data = localStorage.getItem("jeevantrack_timeline_cache");
-    return data ? JSON.parse(data) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveCache(conditions: Condition[]): void {
-  if (typeof window === "undefined") return;
-  const cache: TimelineCache = {
-    conditions,
-    lastUpdated: new Date().toISOString(),
-  };
-  localStorage.setItem("jeevantrack_timeline_cache", JSON.stringify(cache));
-}
-
-export function getNeedsRefresh(): boolean {
-  if (typeof window === "undefined") return true;
-  return localStorage.getItem("jeevantrack_needs_refresh") !== "false";
-}
-
-export function setNeedsRefresh(value: boolean): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("jeevantrack_needs_refresh", String(value));
-}
-
-export function clearNeedsRefresh(): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("jeevantrack_needs_refresh", "false");
 }

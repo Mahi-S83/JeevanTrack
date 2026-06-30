@@ -7,6 +7,7 @@ import {
 } from "recharts";
 import { Loader2, TrendingUp, Activity, Droplet, Sun, Heart, Flame, ArrowUp, ArrowDown, Minus, AlertCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { loadHealthData } from '@/lib/dataService';
 
 type TrendData = {
   date: string;
@@ -63,52 +64,48 @@ export default function TrendsPage() {
     setLoading(true);
     setError("");
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-
-    if (!token) {
-      // If no token, try mock data
-      const mockData = getMockTrendData(metric);
-      setData(mockData);
-      setLoading(false);
-      return;
-    }
-
-    const response = await fetch(`https://jeevantrack-backend.onrender.com/trends/${metric}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+    // ── Load ALL data using unified loader ──
+    const conditions = await loadHealthData();
+    
+    // ── Extract lab values from ALL documents ──
+    const allDocs = conditions.flatMap(c => c.documents);
+    const trendData: TrendData[] = [];
+    
+    allDocs.forEach(doc => {
+      if (doc.extractedData?.lab_values) {
+        Object.entries(doc.extractedData.lab_values).forEach(([key, value]: [string, any]) => {
+          // Match the selected metric
+          const metricKey = key.toLowerCase();
+          const selectedKey = metric.toLowerCase();
+          if (metricKey.includes(selectedKey) || selectedKey.includes(metricKey) || metric === 'all') {
+            trendData.push({
+              date: doc.reportDate || new Date().toISOString().split('T')[0],
+              test_name: key,
+              value: parseFloat(value.value) || 0,
+              unit: value.unit || '',
+              normal_range: value.normal_range || '',
+            });
+          }
+        });
+      }
     });
 
-    if (!response.ok) {
-      // If API fails, use mock data
+    // ── If no data, use mock data ──
+    if (trendData.length === 0) {
+      console.log('📋 No lab values found, using mock data');
       const mockData = getMockTrendData(metric);
       setData(mockData);
-      setLoading(false);
-      return;
-    }
-
-    const result = await response.json();
-    
-    let trendData = [];
-    if (result.data_points && Array.isArray(result.data_points)) {
-      trendData = result.data_points;
-    } else if (Array.isArray(result)) {
-      trendData = result;
+      setError("Showing demo trends. Upload lab reports to see your own data.");
     } else {
-      trendData = [];
+      // Sort by date (oldest to newest)
+      trendData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      setData(trendData);
+      setError(""); // Clear any previous errors
     }
 
-    // If no data, use mock data
-    if (trendData.length === 0) {
-      trendData = getMockTrendData(metric);
-    }
-
-    setData(trendData);
   } catch (err: any) {
     console.error('Failed to fetch trends:', err);
-    // Use mock data on error
+    // Fallback to mock data
     const mockData = getMockTrendData(metric);
     setData(mockData);
     setError("Showing demo data. API is temporarily unavailable.");

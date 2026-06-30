@@ -6,8 +6,10 @@ import {
   Shield
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { isDemoUser, getDemoBrief } from "@/lib/demoMode";
-import { getConditions, type Condition } from "@/lib/conditionStorage";
+import { isDemoUser, getDemoConditions, getDemoBrief } from "@/lib/demoMode";
+import { getConditions, type Condition, saveConditions, saveCache} from "@/lib/conditionStorage";
+import { loadHealthData } from '@/lib/dataService';
+
 
 type ParsedBrief = {
   summary: string;
@@ -44,199 +46,242 @@ export default function BriefPage() {
   }, []);
 
   const fetchBrief = async () => {
-    try {
-      setLoading(true);
-      setError("");
+  try {
+    setLoading(true);
+    setError("");
 
-      // STEP 1: If demo user, show demo brief immediately
-      if (isDemo) {
-        const demoBrief = getDemoBrief();
-        setBrief(demoBrief);
-        setReportsCount(9);
-        parseBrief(demoBrief);
-        setLoading(false);
-        return;
-      }
-
-      // STEP 2: Check if we have real data in localStorage
-      const storedConditions = getConditions();
-      const hasRealData = storedConditions.some(c => c.documents.length > 0);
-
-      if (hasRealData) {
-        const generatedBrief = generateBriefFromConditions(storedConditions);
-        setBrief(generatedBrief);
-        setReportsCount(storedConditions.reduce((acc, c) => acc + c.documents.length, 0));
-        parseBrief(generatedBrief);
-      }
-
-      // STEP 3: Try the API (if not demo)
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      if (token) {
-        try {
-          const response = await fetch('https://jeevantrack-backend.onrender.com/doctor-brief', {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            if (typeof data === 'string' && data.length > 0) {
-              setBrief(data);
-              setReportsCount(1);
-              parseBrief(data);
-              setError("");
-            } else if (data && data.brief) {
-              setBrief(data.brief);
-              setReportsCount(data.reports_count || 1);
-              parseBrief(data.brief);
-              setError("");
-            }
-          }
-        } catch (apiError) {
-          // API failed, but we already have a brief
-          console.log('API failed, using generated brief');
-        }
-      }
-
+    // ── Load ALL data using unified loader ──
+    const conditions = await loadHealthData();
+    
+    if (conditions.length === 0 || conditions.every(c => c.documents.length === 0)) {
+      setError("No health data found. Upload a report first.");
       setLoading(false);
-      
-    } catch (err: any) {
-      console.error('Failed to fetch brief:', err);
-      
-      // If we don't have a brief yet, try demo or generate
-      if (!brief) {
-        if (isDemo) {
-          setBrief(getDemoBrief());
-          setReportsCount(9);
-          parseBrief(getDemoBrief());
-          setError("");
-        } else {
-          const storedConditions = getConditions();
-          const hasRealData = storedConditions.some(c => c.documents.length > 0);
-          if (hasRealData) {
-            const generatedBrief = generateBriefFromConditions(storedConditions);
-            setBrief(generatedBrief);
-            setReportsCount(storedConditions.reduce((acc, c) => acc + c.documents.length, 0));
-            parseBrief(generatedBrief);
-            setError("AI service temporarily unavailable. Showing summary from your stored data.");
-          } else {
-            setError(err.message || "Failed to load doctor brief.");
-          }
-        }
-      }
-      setLoading(false);
+      return;
     }
-  };
 
-  // Generate a brief from stored conditions
-  const generateBriefFromConditions = (conditions: Condition[]) => {
-    const active = conditions.filter(c => c.status === 'active' && c.documents.length > 0);
-    const recurring = conditions.filter(c => c.status === 'recurring' && c.documents.length > 0);
-    const resolved = conditions.filter(c => c.status === 'resolved' && c.documents.length > 0);
+    // ── Generate brief from ALL data ──
+    const briefText = generateBriefFromData(conditions);
+    setBrief(briefText);
+    
     const totalDocs = conditions.reduce((acc, c) => acc + c.documents.length, 0);
+    setReportsCount(totalDocs);
+    parseBrief(briefText);
     
-    let briefText = "CLINICAL SUMMARY:\n";
-    if (active.length > 0) {
-      briefText += `The patient has ${active.length} active condition${active.length !== 1 ? 's' : ''}`;
-      if (active.length === 1) {
-        briefText += `: ${active[0].name}`;
-      }
-      briefText += `. `;
-    }
-    if (recurring.length > 0) {
-      briefText += `${recurring.length} condition${recurring.length !== 1 ? 's' : ''} show recurring patterns. `;
-    }
-    if (resolved.length > 0) {
-      briefText += `${resolved.length} condition${resolved.length !== 1 ? 's' : ''} have been resolved. `;
-    }
-    briefText += `Total of ${totalDocs} documents have been reviewed.\n\n`;
-    
-    briefText += "TOP 3 CONCERNS:\n";
-    let concernIndex = 1;
-    active.forEach(c => {
-      briefText += `${concernIndex}. ${c.name} requires ongoing monitoring with ${c.documents.length} document${c.documents.length !== 1 ? 's' : ''} available.\n`;
-      concernIndex++;
-    });
-    recurring.forEach(c => {
-      if (concernIndex <= 3) {
-        briefText += `${concernIndex}. ${c.name} shows recurring patterns that need regular follow-up.\n`;
-        concernIndex++;
-      }
-    });
-    if (concernIndex === 1) {
-      briefText += "1. No active concerns identified. Routine monitoring recommended.\n";
-    }
-    briefText += "\n";
-    
-    briefText += "RECOMMENDED FOLLOW-UPS:\n";
-    let recIndex = 1;
-    active.forEach(c => {
-      briefText += `${recIndex}. Schedule follow-up for ${c.name} within 3 months.\n`;
-      recIndex++;
-    });
-    recurring.forEach(c => {
-      briefText += `${recIndex}. Monitor ${c.name} with regular check-ups.\n`;
-      recIndex++;
-    });
-    if (recIndex === 1) {
-      briefText += "1. Routine annual health check-up recommended.\n";
-    }
-    
-    return briefText;
-  };
+    // Update demo status
+    const email = localStorage.getItem('user_email');
+    setIsDemo(isDemoUser(email));
 
+  } catch (err: any) {
+    console.error('Failed to fetch brief:', err);
+    setError(err.message || "Failed to load doctor brief.");
+    
+    // Fallback: try to use demo data
+    try {
+      const demoData = getDemoConditions();
+      const briefText = generateBriefFromData(demoData);
+      setBrief(briefText);
+      const totalDocs = demoData.reduce((acc, c) => acc + c.documents.length, 0);
+      setReportsCount(totalDocs);
+      parseBrief(briefText);
+      setError("Showing demo data. Upload reports to see your own data.");
+    } catch (fallbackErr) {
+      // Last resort: hardcoded demo brief
+      setBrief(getDemoBrief());
+      setReportsCount(9);
+      parseBrief(getDemoBrief());
+      setError("AI service temporarily unavailable. Showing demo data.");
+    }
+  } finally {
+    setLoading(false);
+  }
+};
+  // Generate a brief from stored conditions
+  const generateBrief = async () => {
+  setLoading(true);
+  setError("");
+
+  try {
+    const email = localStorage.getItem('user_email');
+    let conditions = getConditions();
+
+    // If demo user or no data, use demo data
+    if (isDemoUser(email) || conditions.length === 0) {
+      console.log("📋 Using demo data for doctor brief");
+      conditions = getDemoConditions();
+      
+      // Save to localStorage so other pages can use it
+      saveConditions(conditions);
+      saveCache(conditions);
+    }
+
+    if (conditions.length === 0 || conditions.every(c => c.documents.length === 0)) {
+      setError("No health data found. Upload a report first.");
+      setLoading(false);
+      return;
+    }
+
+    // Generate brief from data
+    const briefText = generateBriefFromData(conditions);
+    setBrief(briefText);
+
+  } catch (err: any) {
+    console.error("Brief generation failed:", err);
+    // Fallback to pre-written demo brief
+    setBrief(getDemoBrief());
+  } finally {
+    setLoading(false);
+  }
+};
+const generateBriefFromData = (conditions: any[]) => {
+  const allDocs = conditions.flatMap(c => c.documents);
+  const totalDocs = allDocs.length;
+  
+  // ── Get conditions by status ──
+  const activeConditions = conditions.filter(c => c.status === 'active').map(c => c.name);
+  const recurringConditions = conditions.filter(c => c.status === 'recurring').map(c => c.name);
+  const resolvedConditions = conditions.filter(c => c.status === 'resolved').map(c => c.name);
+  
+  // ── Get ONLY the most important lab values ──
+  const keyLabValues: Record<string, any> = {};
+  allDocs.forEach(doc => {
+    if (doc.extractedData?.lab_values) {
+      Object.entries(doc.extractedData.lab_values).forEach(([key, value]: [string, any]) => {
+        const importantMarkers = [
+          'hemoglobin', 'hba1c', 'blood sugar', 'cholesterol', 
+          'blood pressure', 'ferritin', 'glucose', 'hdl', 'ldl',
+          'triglyceride', 'vitamin', 'iron'
+        ];
+        const keyLower = key.toLowerCase();
+        if (importantMarkers.some(m => keyLower.includes(m))) {
+          if (!keyLabValues[key]) {
+            keyLabValues[key] = value;
+          }
+        }
+      });
+    }
+  });
+
+  // ── Build summary ──
+  let summary = `The patient has ${conditions.length} condition(s) tracked.\n\n`;
+  
+  if (activeConditions.length > 0) {
+    summary += `Active: ${activeConditions.join(', ')}\n`;
+  }
+  if (recurringConditions.length > 0) {
+    summary += `Recurring: ${recurringConditions.join(', ')}\n`;
+  }
+  if (resolvedConditions.length > 0) {
+    summary += `Resolved: ${resolvedConditions.join(', ')}\n`;
+  }
+  
+  summary += `\nTotal health records: ${totalDocs}`;
+
+  // ── Key lab values ──
+  const labEntries = Object.entries(keyLabValues);
+  if (labEntries.length > 0) {
+    summary += '\n\nKey Lab Values:\n';
+    labEntries.slice(0, 6).forEach(([key, val]: [string, any]) => {
+      summary += `  • ${key}: ${val.value} ${val.unit || ''}\n`;
+    });
+  }
+
+  // ── Recommendations ──
+  const recommendations = [];
+  if (activeConditions.length > 0) {
+    recommendations.push(`Continue monitoring: ${activeConditions.join(', ')}`);
+  }
+  if (recurringConditions.length > 0) {
+    recommendations.push(`Schedule follow-up for: ${recurringConditions.join(', ')}`);
+  }
+  if (resolvedConditions.length > 0) {
+    recommendations.push(`Maintain healthy lifestyle for: ${resolvedConditions.join(', ')}`);
+  }
+  recommendations.push('Review all reports with your healthcare provider');
+  recommendations.push('Keep your health timeline updated with new reports');
+
+  summary += '\n\nRecommendations:\n';
+  recommendations.forEach((rec, i) => {
+    summary += `  ${i + 1}. ${rec}\n`;
+  });
+
+  // ── ADD CONDITIONS SECTION FOR PARSING ──
+  summary += '\n--- Conditions ---\n';
+  conditions.forEach(c => {
+    summary += `${c.name}|${c.status}|${c.documents.length}\n`;
+  });
+
+  return summary;
+};
   const parseBrief = (text: string) => {
-    const sections: ParsedBrief = {
-      summary: "",
-      concerns: [],
-      recommendations: [],
-      diagnoses: [],
-      medications: [],
-      abnormalValues: []
-    };
-
-    const summaryMatch = text.match(/CLINICAL SUMMARY:([\s\S]*?)(?=TOP 3 CONCERNS|RECOMMENDED|$)/i);
-    if (summaryMatch) {
-      sections.summary = summaryMatch[1].trim();
-    }
-
-    const concernsMatch = text.match(/TOP 3 CONCERNS:([\s\S]*?)(?=RECOMMENDED|CLINICAL SUMMARY|$)/i);
-    if (concernsMatch) {
-      const concernsText = concernsMatch[1].trim();
-      sections.concerns = concernsText.split(/\d+\.\s*/).filter(c => c.trim().length > 0).map(c => c.trim());
-    }
-
-    const recMatch = text.match(/RECOMMENDED FOLLOW-UPS:([\s\S]*?)(?=CLINICAL SUMMARY|TOP 3|$)/i);
-    if (recMatch) {
-      const recText = recMatch[1].trim();
-      sections.recommendations = recText.split(/\d+\.\s*/).filter(r => r.trim().length > 0).map(r => r.trim());
-    }
-
-    const diagMatch = text.match(/DIAGNOSES HISTORY:([\s\S]*?)(?=CURRENT MEDICATIONS|KEY ABNORMAL|$)/i);
-    if (diagMatch) {
-      const diagText = diagMatch[1].trim();
-      sections.diagnoses = diagText.split(/\n/).filter(l => l.trim().length > 0).slice(0, 5);
-    }
-
-    const medMatch = text.match(/CURRENT MEDICATIONS:([\s\S]*?)(?=KEY ABNORMAL|PATIENT HEALTH|$)/i);
-    if (medMatch) {
-      const medText = medMatch[1].trim();
-      sections.medications = medText.split(/\n/).filter(m => m.trim().length > 0 && !m.includes('mentioned')).slice(0, 8);
-    }
-
-    const labMatch = text.match(/KEY ABNORMAL LAB VALUES:([\s\S]*?)(?=PATIENT HEALTH|$)/i);
-    if (labMatch) {
-      const labText = labMatch[1].trim();
-      sections.abnormalValues = labText.split(/\n/).filter(l => l.trim().length > 0).slice(0, 10);
-    }
-
-    setParsedData(sections);
+  const sections: ParsedBrief = {
+    summary: "",
+    concerns: [],
+    recommendations: [],
+    diagnoses: [],
+    medications: [],
+    abnormalValues: []
   };
 
+  // ── Extract summary (everything before "Recommendations:") ──
+  const summaryMatch = text.match(/^([\s\S]*?)(?=\n\nRecommendations:|$)/);
+  if (summaryMatch) {
+    sections.summary = summaryMatch[1].trim();
+  }
+
+  // ── Extract recommendations ──
+  const recMatch = text.match(/Recommendations:\s*([\s\S]*?)(?=\n--- Conditions ---|$)/);
+  if (recMatch) {
+    const recText = recMatch[1].trim();
+    sections.recommendations = recText
+      .split(/\d+\.\s*/)
+      .filter(r => r.trim().length > 0)
+      .map(r => r.trim());
+  }
+
+  // ── Extract lab values as "abnormal values" ──
+  const labMatch = text.match(/Key Lab Values:\s*([\s\S]*?)(?=\n\nRecommendations:|$)/);
+  if (labMatch) {
+    const labText = labMatch[1].trim();
+    sections.abnormalValues = labText
+      .split('\n')
+      .filter(l => l.includes('•'))
+      .map(l => l.trim().replace('• ', ''));
+  }
+
+  // ── Extract conditions for Diagnoses section ──
+  const conditionsMatch = text.match(/--- Conditions ---\s*([\s\S]*?)$/);
+  if (conditionsMatch) {
+    const condText = conditionsMatch[1].trim();
+    const lines = condText.split('\n').filter(l => l.includes('|'));
+    sections.diagnoses = lines.map(l => {
+      const parts = l.split('|');
+      const name = parts[0] || 'Unknown';
+      const status = parts[1] || 'active';
+      const count = parts[2] || '0';
+      return `${name} (${status}) - ${count} document(s)`;
+    });
+  }
+
+  // ── If no conditions found, try to extract from summary ──
+  if (sections.diagnoses.length === 0 && sections.summary) {
+    const summary = sections.summary;
+    const activeMatch = summary.match(/Active:\s*([^\n]+)/);
+    const recurringMatch = summary.match(/Recurring:\s*([^\n]+)/);
+    const resolvedMatch = summary.match(/Resolved:\s*([^\n]+)/);
+    
+    if (activeMatch) {
+      sections.diagnoses.push(`Active: ${activeMatch[1]}`);
+    }
+    if (recurringMatch) {
+      sections.diagnoses.push(`Recurring: ${recurringMatch[1]}`);
+    }
+    if (resolvedMatch) {
+      sections.diagnoses.push(`Resolved: ${resolvedMatch[1]}`);
+    }
+  }
+
+  setParsedData(sections);
+};
   const handleDownload = () => {
     if (!brief) return;
     const element = document.createElement("a");
