@@ -15,30 +15,22 @@
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase)](https://supabase.com/)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-4285F4?logo=google)](https://deepmind.google/technologies/gemini/)
 
----
-
-### 🏆 BuildForGood 2026 — SWASTHYA Track
-
-> *Health, Wellness & Care Access — bring healthcare closer in distance, cost and language*
-
-Built for India's 450 million underserved patients — migrant workers, rural families, and anyone whose health history lives in a WhatsApp folder.
-
----
-
-### 👥 Team Code Blooded
-
-| Role | Name |
-|---|---|
-| 🛠️ Team Member | Mahi Singh |
-| 🛠️ Team Member | Saksham Trivedi |
-
 </div>
 
 ---
 
-## 🎭 Demo Account
+## 👥 Built By
 
-A pre-seeded demo account is available for judges and evaluators. No file uploads needed — all features work immediately.
+| Role | Name |
+|---|---|
+| 🛠️ Developer | Mahi Singh |
+| 🛠️ Developer | Saksham Trivedi |
+
+---
+
+## 🎭 Live Demo Account
+
+A pre-seeded demo account is available so you can explore every feature without uploading your own files.
 
 | | |
 |---|---|
@@ -47,33 +39,17 @@ A pre-seeded demo account is available for judges and evaluators. No file upload
 
 ---
 
-## 📌 The Problem — भारत के लिए बनाओ
+## 📌 The Problem
 
 India has 70,000+ private hospitals and over a billion patients — yet most people's medical history exists as a scattered mess of WhatsApp forwards, physical folders, and memory.
 
-This problem is especially acute for:
+This is especially painful for:
 - **Migrant and mobile workers** who change cities and lose continuity of care
 - **Rural patients** who travel long distances to see specialists and can't recall their history
 - **Families managing elderly parents** across multiple hospitals and doctors
-- **Anyone visiting a new doctor** who asks "do you have your old reports?" — and the answer is no
+- **Anyone visiting a new doctor** who gets asked "do you have your old reports?" — and the answer is no
 
-Tools like ABHA or Practo solve *storage* — they file documents. **None of them solve the understanding problem.**
-
-JeevanTrack fills the temporal reasoning gap that no existing tool addresses: *"your Vitamin D has been deficient in 3 out of 4 reports over 2 years"* or *"your blood sugar has been trending upward since 2022."*
-
-> **SWASTHYA alignment:** JeevanTrack directly addresses health documentation for mobile workers, rural & remote healthcare access, and medicine availability awareness — three of the four SWASTHYA focus areas.
-
----
-
-## 🌍 Social Impact
-
-| Who benefits | How JeevanTrack helps |
-|---|---|
-| **Migrant workers** | Single health record that travels with them — no more starting from scratch with every new city doctor |
-| **Rural patients** | One-click Doctor Brief means a specialist gets full context in 30 seconds, not 30 minutes |
-| **Elderly patients** | Family members can manage and share health records without the patient needing a smartphone |
-| **Low-literacy users** | AI extracts data automatically — no manual entry, no forms to fill |
-| **Uninsured patients** | Better health tracking = earlier detection = lower cost of treatment |
+Tools like ABHA or Practo solve *storage* — they file documents. JeevanTrack was built to solve the harder problem: **understanding**. It fills the temporal reasoning gap that most health apps skip: *"your Vitamin D has been deficient in 3 out of 4 reports over 2 years"* or *"your blood sugar has been trending upward since 2022."*
 
 ---
 
@@ -88,7 +64,7 @@ JeevanTrack fills the temporal reasoning gap that no existing tool addresses: *"
 | 💬 **Ask AI** | Natural language Q&A over your personal health data |
 | 📓 **Health Journal** | Log symptoms, medications, and notes |
 | 🔗 **Secure Share Links** | Expiring QR-code links for doctors — no account needed |
-| 🛡️ **Manual Fallback** | Full functionality even when Gemini quota is exhausted |
+| 🛡️ **Manual Fallback** | Full functionality even when the Gemini quota is exhausted |
 
 ---
 
@@ -255,19 +231,19 @@ The standardization engine maps all variations into a unified internal represent
 
 ---
 
-## 🧠 Why JeevanTrack is More Than ChatGPT or Gemini
+## 🧠 Why JeevanTrack Goes Beyond a Generic Chatbot
 
 | Capability | Generic LLM | JeevanTrack |
 |---|---|---|
 | **Persistent memory across reports** | ❌ No memory between sessions | ✅ Every report stored permanently |
 | **Temporal reasoning** | ❌ Single-report analysis only | ✅ "Iron was low Feb 2023, normal Aug 2023, low again Jan 2024" |
 | **Structured extraction** | ❌ Returns prose summaries | ✅ Strict JSON with 80+ lab values, units, normal ranges |
-| **Identity-linked records** | ❌ No concept of "your" data | ✅ Every report linked to verified user UUID |
+| **Identity-linked records** | ❌ No concept of "your" data | ✅ Every report linked to a verified user UUID |
 | **Zero manual entry** | ❌ User must copy-paste values | ✅ Full extraction + storage in one API call |
 | **Doctor-ready output** | ❌ Requires manual formatting | ✅ Aggregated clinical brief in one click |
 | **Secure doctor sharing** | ❌ No sharing mechanism | ✅ Expiring QR-code links, no doctor account needed |
 
-> **Real example:** Upload three CBC reports over six months. JeevanTrack automatically tracks hemoglobin from 8.9 → 10.5 → 12.1 g/dL, identifies anemia recovery, updates the health timeline, and generates progress insights — without any manual comparison.
+> **Example:** Upload three CBC reports over six months. JeevanTrack automatically tracks hemoglobin from 8.9 → 10.5 → 12.1 g/dL, identifies anemia recovery, updates the health timeline, and generates progress insights — without any manual comparison.
 
 ---
 
@@ -315,16 +291,12 @@ JeevanTrack/
 - A Supabase project
 - A Google Gemini API key
 
----
-
 ### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/Mahi-S83/JeevanTrack.git
 cd JeevanTrack
 ```
-
----
 
 ### 2. Backend Setup
 
@@ -348,8 +320,6 @@ uvicorn main:app --reload --port 8000
 
 Backend will be available at `http://localhost:8000`
 API docs (auto-generated by FastAPI): `http://localhost:8000/docs`
-
----
 
 ### 3. Frontend Setup
 
@@ -388,8 +358,6 @@ GEMINI_API_KEY=your-google-gemini-api-key
 | `GEMINI_API_KEY` | Google Gemini API key | [Google AI Studio](https://aistudio.google.com/) |
 
 > ⚠️ Use the **service role key** for the backend (not the anon key). The service key bypasses Row Level Security and is required for server-side operations.
-
----
 
 ### Frontend `.env.local`
 
@@ -528,10 +496,10 @@ shares (
 |---|---|
 | ⚠️ PDF preview | File URL stored; in-browser viewer not implemented |
 | ⚠️ Voice journal | UI ready; voice recording not implemented |
-| ❌ Family health profiles | Post-hackathon |
-| ❌ RLS enabled | Post-hackathon |
-| ❌ Push notifications | Post-hackathon |
-| ❌ Regional language support (Hindi/Tamil/Telugu) | High priority for SWASTHYA alignment |
+| ❌ Family health profiles | Planned |
+| ❌ Row-Level Security (RLS) | Planned |
+| ❌ Push notifications | Planned |
+| ❌ Regional language support (Hindi/Tamil/Telugu) | High priority |
 
 ---
 
@@ -554,22 +522,22 @@ shares (
 
 ---
 
-## 🔮 Roadmap — SWASTHYA Vision
+## 🔮 Roadmap
 
 **Short-term**
 - Regional language support (Hindi, Tamil, Telugu, Bengali) — critical for rural accessibility
 - Offline mode for low-connectivity areas
-- WhatsApp integration for report sharing (most common medium in rural India)
+- WhatsApp integration for report sharing
 - ABHA (Ayushman Bharat Health Account) integration
 
 **Medium-term**
-- Doctor and ASHA worker access modules
+- Doctor and community health-worker access modules
 - Automated medication reminders via SMS
 - Health risk scoring for preventive care
 - Integration with Jan Aushadhi (generic medicines) for cost-aware prescriptions
 
 **Long-term vision**
-JeevanTrack aims to become India's health memory layer — giving every Indian, regardless of literacy, location, or income, the ability to understand their own health history and walk into any doctor's office with their complete medical story. Built for Bharat, not just urban India.
+JeevanTrack aims to become a health memory layer — giving people, regardless of literacy, location, or income, the ability to understand their own health history and walk into any doctor's office with their complete medical story.
 
 ---
 
@@ -581,12 +549,8 @@ MIT — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-Built with ❤️ for **BuildForGood 2026 — SWASTHYA**
-
-*Mahi Singh · Saksham Trivedi*
-
 **JeevanTrack** — *Your health, remembered.*
 
-*भारत के लिए बनाओ। असल समस्याओं के लिए बनाओ।*
+*Mahi Singh · Saksham Trivedi*
 
 </div>
