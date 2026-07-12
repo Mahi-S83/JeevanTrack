@@ -24,11 +24,11 @@ app = FastAPI(title="JeevanTrack API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://jeevantrack-backend.onrender.com",
-    "*"  # temporary during development
-],   
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://jeevantrack-backend.onrender.com",
+        "https://jeevan-track.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,13 +62,11 @@ def extract_with_gemini(file_bytes: bytes, mime_type: str) -> dict:
             EXTRACTION_PROMPT
         ]
     )
-
     text = response.text.strip()
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
             text = text[4:]
-
     return json.loads(text.strip())
 
 
@@ -81,6 +79,42 @@ def get_user_id_from_token(authorization: str = None) -> str | None:
         return user.user.id
     except Exception:
         return None
+
+
+def build_chunk_text(extracted_data: dict) -> str:
+    parts = []
+
+    if extracted_data.get("report_date"):
+        parts.append(f"Report date: {extracted_data['report_date']}")
+    if extracted_data.get("doctor_name"):
+        parts.append(f"Doctor: {extracted_data['doctor_name']}")
+    if extracted_data.get("hospital_name"):
+        parts.append(f"Hospital: {extracted_data['hospital_name']}")
+    if extracted_data.get("diagnosis"):
+        parts.append(f"Diagnosis: {extracted_data['diagnosis']}")
+    if extracted_data.get("medicines"):
+        medicines = extracted_data["medicines"]
+        if medicines:
+            parts.append(f"Medicines: {', '.join(medicines)}")
+    if extracted_data.get("report_type"):
+        parts.append(f"Report type: {extracted_data['report_type']}")
+
+    lab_values = extracted_data.get("lab_values") or {}
+    for test_name, test_data in lab_values.items():
+        value = test_data.get("value")
+        unit = test_data.get("unit", "")
+        normal = test_data.get("normal_range", "")
+        parts.append(f"{test_name}: {value} {unit} (normal range: {normal})")
+
+    return "\n".join(parts)
+
+
+def generate_embedding(text: str) -> list:
+    result = gemini_client.models.embed_content(
+        model="models/text-embedding-004",
+        contents=text
+    )
+    return result.embeddings[0].values
 
 
 @app.get("/")
@@ -134,9 +168,27 @@ async def upload_report(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database insert failed: {str(e)}")
 
+    report_id = result.data[0]["id"] if result.data else None
+
+    # RAG — generate embedding and store chunk
+    if report_id:
+        try:
+            chunk_text = build_chunk_text(extracted_data)
+            embedding = generate_embedding(chunk_text)
+
+            supabase.table("report_chunks").insert({
+                "report_id": report_id,
+                "user_id": user_id,
+                "content": chunk_text,
+                "embedding": embedding
+            }).execute()
+        except Exception as e:
+            # Don't fail the upload if embedding fails
+            print(f"Embedding generation failed: {str(e)}")
+
     return {
         "message": "File uploaded and processed successfully",
-        "report_id": result.data[0]["id"] if result.data else None,
+        "report_id": report_id,
         "file_name": file.filename,
         "extracted": extracted_data
     }
@@ -213,36 +265,66 @@ async def chat(request: dict, authorization: str = Header(None)):
     if not user_message:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    query = supabase.table("reports").select(
-        "file_name, extracted_data, uploaded_at"
-    ).order("uploaded_at", desc=False)
-
-    if user_id:
-        query = query.eq("user_id", user_id)
-
-    response = query.execute()
-
     reports_context = ""
-    for report in response.data:
-        extracted = report.get("extracted_data") or {}
-        reports_context += f"""
+
+    # PRIMARY: RAG — semantic vector search
+    if user_id:
+        try:
+            query_embedding = generate_embedding(user_message)
+
+            results = supabase.rpc("match_chunks", {
+                "query_embedding": query_embedding,
+                "match_user_id": user_id,
+                "match_count": 5
+            }).execute()
+
+            if results.data:
+                for chunk in results.data:
+                    similarity = chunk.get("similarity", 0)
+                    if similarity >= 0.3:
+                        reports_context += f"""
+[Similarity: {similarity:.2f}]
+{chunk['content']}
+---
+"""
+        except Exception as e:
+            print(f"Vector search failed, falling back to SQL: {str(e)}")
+
+    # FALLBACK: SQL-based retrieval if RAG returns nothing
+    if not reports_context:
+        query = supabase.table("reports").select(
+            "file_name, extracted_data, uploaded_at"
+        ).order("uploaded_at", desc=False)
+
+        if user_id:
+            query = query.eq("user_id", user_id)
+
+        response = query.execute()
+
+        for report in response.data:
+            extracted = report.get("extracted_data") or {}
+            lab_values = extracted.get("lab_values") or {}
+            key_labs = {k: v for i, (k, v) in enumerate(lab_values.items()) if i < 20}
+
+            reports_context += f"""
 Report: {report['file_name']} (uploaded: {report['uploaded_at']})
 Date: {extracted.get('report_date')}
 Hospital: {extracted.get('hospital_name')}
 Doctor: {extracted.get('doctor_name')}
 Diagnosis: {extracted.get('diagnosis')}
 Medicines: {extracted.get('medicines')}
-Lab Values: {json.dumps(extracted.get('lab_values', {}))}
+Lab Values: {json.dumps(key_labs)}
 ---
 """
 
     chat_prompt = f"""
-You are a personal health assistant. You have access to the user's medical reports below.
+You are a personal health assistant. You have access to the user's medical records below.
 Answer the user's question based ONLY on their actual report data.
-Be concise, clear, and helpful. If the data doesn't contain the answer, say so honestly.
+Be concise, clear, and helpful. Cite specific values from the reports.
+If the data doesn't contain the answer, say so honestly.
 Do not make up values or diagnoses.
 
-USER'S MEDICAL REPORTS:
+USER'S HEALTH RECORDS:
 {reports_context}
 
 USER QUESTION: {user_message}
@@ -252,7 +334,11 @@ Answer:"""
     try:
         ai_response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=chat_prompt
+            contents=chat_prompt,
+            config={
+                "max_output_tokens": 300,
+                "temperature": 0.1
+            }
         )
         return {
             "question": user_message,
@@ -362,7 +448,7 @@ def create_share_link(expiry_hours: int = 24):
 
     return {
         "token": token,
-        "share_url": f"http://localhost:8000/shared/{token}",
+        "share_url": f"https://jeevantrack-backend.onrender.com/shared/{token}",
         "expires_at": expires_at.isoformat(),
         "expires_in_hours": expiry_hours
     }
@@ -458,7 +544,6 @@ def revoke_share_link(token: str):
 def delete_report(report_id: str, authorization: str = Header(None)):
     user_id = get_user_id_from_token(authorization)
 
-    # Verify the report belongs to this user
     try:
         report = supabase.table("reports").select("id, user_id").eq("id", report_id).execute()
     except Exception as e:
@@ -467,11 +552,9 @@ def delete_report(report_id: str, authorization: str = Header(None)):
     if not report.data:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # If user is logged in, make sure they own this report
     if user_id and report.data[0].get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this report")
 
-    # Delete the report
     try:
         supabase.table("reports").delete().eq("id", report_id).execute()
     except Exception as e:
