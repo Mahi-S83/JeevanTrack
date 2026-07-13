@@ -111,8 +111,9 @@ def build_chunk_text(extracted_data: dict) -> str:
 
 def generate_embedding(text: str) -> list:
     result = gemini_client.models.embed_content(
-        model="models/text-embedding-004",
-        contents=text
+        model="gemini-embedding-2",
+        contents=text,
+        config={"output_dimensionality": 768}
     )
     return result.embeddings[0].values
 
